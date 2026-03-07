@@ -256,6 +256,43 @@
 
   const zip = new ZipWriter();
 
+  // ─── GPT NAME RESOLUTION ──────────────────────────────────
+  // Resolve Custom GPT gizmo_ids to their display names via the API.
+  // Names are cached so each GPT is only fetched once.
+  const gptNameCache = {};  // gizmo_id -> display name
+
+  async function resolveGptName(gizmoId) {
+    if (gptNameCache[gizmoId]) return gptNameCache[gizmoId];
+    try {
+      const resp = await fetch(`${BASE}/gizmos/${gizmoId}`, { headers: hdrs });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const gizmo = data.gizmo || data;
+      const name = gizmo.display?.name || gizmo.name || gizmo.title || null;
+      if (name) {
+        gptNameCache[gizmoId] = name;
+        return name;
+      }
+    } catch (e) {
+      logMsg(`Could not resolve GPT name for ${gizmoId.slice(0, 12)}: ${e.message}`, 'cgpt-exp-warn');
+    }
+    // Fallback to truncated ID
+    const fallback = `Custom GPT (${gizmoId.slice(0, 12)})`;
+    gptNameCache[gizmoId] = fallback;
+    return fallback;
+  }
+
+  // Batch-resolve all unique gizmo_ids before the main export loop
+  const uniqueGizmoIds = [...new Set(allConvs.map(c => c.gizmo_id).filter(Boolean))];
+  if (uniqueGizmoIds.length > 0) {
+    ui.status.textContent = `Resolving ${uniqueGizmoIds.length} Custom GPT names...`;
+    for (let i = 0; i < uniqueGizmoIds.length; i++) {
+      await resolveGptName(uniqueGizmoIds[i]);
+      await sleep(DELAY_MS);
+    }
+    logMsg(`Resolved ${uniqueGizmoIds.length} Custom GPT names`, '');
+  }
+
   // ─── HELPERS ──────────────────────────────────────────────
   function getProject(conv) {
     for (const key of ['project', 'workspace']) {
@@ -265,6 +302,7 @@
         if (typeof val === 'string') return val;
       }
     }
+    if (conv.gizmo_id && gptNameCache[conv.gizmo_id]) return gptNameCache[conv.gizmo_id];
     if (conv.gizmo_id) return `Custom GPT (${conv.gizmo_id.slice(0, 12)})`;
     return 'No Project';
   }

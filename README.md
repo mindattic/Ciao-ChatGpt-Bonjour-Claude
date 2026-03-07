@@ -5,7 +5,7 @@ Migrate **all** your ChatGPT conversations into Claude Projects with two browser
 | Step | Script | Where to run | What it does |
 |------|--------|--------------|--------------|
 | 1 | `ChatGPTConversationExporter.js` | chatgpt.com | Exports every conversation as a `.txt` inside a `.zip`, organized by project folder. |
-| 2 | `ClaudeConversationImporter.js` | claude.ai | Reads the `.zip`, creates matching Claude Projects, and uploads each conversation as a knowledge document. |
+| 2 | `ClaudeConversationImporter.js` | claude.ai | Reads the `.zip`, creates matching Claude Projects, and imports each conversation as a new Claude chat. |
 
 Both scripts work the same way: open **F12 → Console**, paste the script, hit **Enter**. They reuse the Authorization token and Cookie the browser already holds for the active session — nothing to configure.
 
@@ -63,10 +63,11 @@ Both scripts work the same way: open **F12 → Console**, paste the script, hit 
 1. **URL Check** — Verifies the script is running on `chatgpt.com`. If the hostname does not match, an alert is shown and the script exits immediately.
 2. **Authentication** — Retrieves your session access token by calling `/api/auth/session`. The token is sent as a `Bearer` token in the `Authorization` header for all subsequent requests.
 3. **Discovery** — Paginates through `/backend-api/conversations` (100 conversations per page, ordered by `updated`) to build a complete list of every conversation in your account.
-4. **Fetch** — For each conversation, fetches the full message tree from `/backend-api/conversation/{id}`.
-5. **Extract** — Walks the message tree using a depth-first traversal (iterative stack). Each node's `message.content.parts` array is joined into plain text. Messages are labelled by role (`You`, `ChatGPT`, `System`, `Tool`).
-6. **Package** — Writes each conversation as a `.txt` file inside a zip archive using a built-in pure-JavaScript zip writer (STORE method, no compression). Files are organized into folders by project/workspace name.
-7. **Download** — Generates the zip blob in-browser and triggers an automatic download.
+4. **GPT Name Resolution** — Collects all unique `gizmo_id` values (Custom GPTs) and batch-resolves their display names via `/backend-api/gizmos/{gizmo_id}`. Names are cached so each GPT is only fetched once. If a lookup fails, the folder falls back to `Custom GPT ({id})`.
+5. **Fetch** — For each conversation, fetches the full message tree from `/backend-api/conversation/{id}`.
+6. **Extract** — Walks the message tree using a depth-first traversal (iterative stack). Each node's `message.content.parts` array is joined into plain text. Messages are labelled by role (`You`, `ChatGPT`, `System`, `Tool`).
+7. **Package** — Writes each conversation as a `.txt` file inside a zip archive using a built-in pure-JavaScript zip writer (STORE method, no compression). Files are organized into folders by project/workspace name.
+8. **Download** — Generates the zip blob in-browser and triggers an automatic download.
 
 ### ChatGPT API Endpoints Used
 
@@ -75,6 +76,7 @@ Both scripts work the same way: open **F12 → Console**, paste the script, hit 
 | `/api/auth/session` | GET | Retrieve the current session access token |
 | `/backend-api/conversations?offset={n}&limit=100&order=updated` | GET | Paginate through the conversation list |
 | `/backend-api/conversation/{id}` | GET | Fetch the full message tree for a single conversation |
+| `/backend-api/gizmos/{gizmo_id}` | GET | Resolve a Custom GPT's display name from its gizmo ID |
 
 ### Configuration
 
@@ -89,7 +91,7 @@ Each conversation is placed into a folder determined by the following priority:
 
 1. `conv.project` — if the conversation has a `project` object, its `.name` or `.title` is used.
 2. `conv.workspace` — same logic as above, checked as a fallback.
-3. `conv.gizmo_id` — if the conversation was with a Custom GPT, the folder is named `Custom GPT ({first 12 chars of gizmo_id})`.
+3. `conv.gizmo_id` — if the conversation was with a Custom GPT, the script looks up the GPT's display name via `/backend-api/gizmos/{gizmo_id}` (resolved and cached before the export loop). If the lookup fails, the folder is named `Custom GPT ({first 12 chars of gizmo_id})`.
 4. **Fallback** — conversations that match none of the above go into a `No Project` folder.
 
 ### Conversation Format
@@ -161,21 +163,21 @@ The exporter includes a minimal, dependency-free zip writer implemented in pure 
 6. An overlay will appear. Click **Minimize & Capture**, then **send any message** in Claude's chat. This lets the script capture your session's auth headers.
 7. The overlay reappears with a file picker — select your `chatgpt_export_YYYY-MM-DD.zip` file from Step 1.
 8. If you belong to multiple Claude organizations (e.g., Free + Team), a picker appears — **choose your org**.
-9. A list of your existing Claude Projects appears — **click the project** you want all conversations uploaded into.
-10. The script uploads every conversation as a knowledge document. A progress overlay shows live status.
-11. When finished, a summary screen shows documents uploaded. Click **Close** to dismiss.
+9. The script automatically creates one Claude Project per export folder and imports each conversation as a new Claude chat. If there aren’t enough project slots, smaller folders are merged into a single *Miscellaneous* project.
+10. When finished, a summary screen shows projects created, conversations imported, and errors. Click **Close** to dismiss.
 
 ### How It Works
 
 1. **URL Check** — Verifies the script is running on `claude.ai`. If the hostname does not match, an alert is shown and the script exits immediately.
-2. **Auth Capture** — The overlay minimizes and the script intercepts `window.fetch` to capture auth headers from the next Claude API call the user triggers (e.g., sending a message). These headers are replayed via un-patched native `fetch` (obtained from a hidden iframe) for all subsequent API calls.
+2. **Auth Capture** — The overlay minimizes and the script intercepts `window.fetch` to capture auth headers and the active model name from the next Claude API call the user triggers (e.g., sending a message). These headers are replayed via un-patched native `fetch` (obtained from a hidden iframe) for all subsequent API calls.
 3. **File Selection** — Presents a styled file picker (`<input type="file" accept=".zip">`). The user selects the export zip.
-4. **Parse** — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). See [Built-in Zip Reader](#built-in-zip-reader).
-5. **Flatten** — All files are flattened into a single list. Each filename is prefixed with its original folder name in brackets (e.g., `[Work Projects] Refactor auth.txt`) so you can identify the ChatGPT project it came from.
-6. **Organization Picker** — Fetches all Claude organizations from `/api/organizations`. If you belong to multiple orgs (e.g., personal Free plan + a Team workspace), a picker lets you choose which one. Single-org accounts skip this step.
-7. **Project Picker** — Lists your existing Claude Projects and presents them as clickable buttons. You choose which project to upload all conversations into.
-8. **Upload Documents** — Each conversation `.txt` is uploaded as a multipart form (`FormData`) to the chosen project's docs endpoint.
-9. **Summary** — Displays a completion screen with the count of documents uploaded and any errors.
+4. **Parse & Group** — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). Files are grouped by their top-level folder (matching the ChatGPT project/workspace they came from). See [Built-in Zip Reader](#built-in-zip-reader).
+5. **Organization Picker** — Fetches all Claude organizations from `/api/organizations`. If you belong to multiple orgs (e.g., personal Free plan + a Team workspace), a picker lets you choose which one. Single-org accounts skip this step.
+6. **Slot Planning** — Lists existing Claude Projects to determine how many of the 10 project slots are available. If a folder name matches an existing project (case-insensitive), that project is reused.
+7. **Smart Merging** — If there are more new folders than available slots, the largest folders get their own projects and the smallest are merged into a single *Miscellaneous* project with bracket-prefixed filenames (e.g., `[My Custom GPT] Design review.txt`).
+8. **Create Projects** — New projects are created via `POST /api/organizations/{orgId}/projects` with `is_private: true`.
+9. **Create Conversations** — For each `.txt` file, a new chat conversation is created via `POST /api/organizations/{orgId}/chat_conversations` with the conversation title and `project_uuid`. The conversation content is then sent as the first message via the streaming completion endpoint, and the response is drained so the server commits the conversation.
+10. **Summary** — Displays a completion screen with counts of projects created, projects reused, conversations imported, and errors.
 
 > **Why does this work?** Claude's frontend wraps `window.fetch` and adds auth headers (session tokens, client identifiers) internally. Our script captures those headers by intercepting a real API call, then uses un-patched native `fetch` (from a hidden iframe) to make its own requests with the same credentials. This bypasses the wrapper entirely while preserving full authentication.
 
@@ -184,8 +186,10 @@ The exporter includes a minimal, dependency-free zip writer implemented in pure 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/organizations` | GET | Retrieve the current user's organization UUID |
-| `/api/organizations/{orgId}/projects` | GET | List existing projects (for the project picker) |
-| `/api/organizations/{orgId}/projects/{projectId}/docs` | POST | Upload a conversation file as a knowledge document (multipart form) |
+| `/api/organizations/{orgId}/projects` | GET | List existing projects (for slot counting and duplicate detection) |
+| `/api/organizations/{orgId}/projects` | POST | Create a new project (`name`, `description`, `is_private`) |
+| `/api/organizations/{orgId}/chat_conversations` | POST | Create a new chat conversation (`uuid`, `name`, `project_uuid`) |
+| `/api/organizations/{orgId}/chat_conversations/{convId}/completion` | POST | Send a message to a conversation (streaming response) |
 
 ### Configuration
 
@@ -205,18 +209,17 @@ The importer includes a minimal, dependency-free zip reader implemented in pure 
 
 > **Note:** The exporter generates STORE-method (uncompressed) zips for maximum compatibility. The importer also handles DEFLATE-compressed zips produced by other tools. Directories and zero-length entries are skipped.
 
-### Filename Flattening
+### Project Slot Management
 
-Since all conversations are uploaded into a single project, the original folder structure is preserved in each filename using a bracket prefix:
+Claude limits accounts to a maximum number of projects (typically 5 for Free, 10 for Team plans). The importer handles this automatically:
 
-```
-[Work Projects] Refactor auth module.txt
-[Side Projects] Build a CLI tool.txt
-[No Project] Random question.txt
-[Custom GPT (g-abc123…)] Design review.txt
-```
+1. **Existing projects are reused** — If a folder name matches an existing project (case-insensitive), files are uploaded into it without creating a duplicate.
+2. **Largest folders get priority** — When there are more folders than available slots, folders are sorted by file count. The largest get their own dedicated projects.
+3. **Small folders are merged** — Remaining folders are combined into a single *Miscellaneous* project. Filenames are prefixed with their original folder: `[My Custom GPT] Design review.txt`.
 
-This lets you identify which ChatGPT project/workspace each conversation originally belonged to.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_PROJECTS` | `10` | Maximum number of projects allowed by your plan. Adjust if your plan differs. |
 
 ---
 

@@ -8,8 +8,9 @@
 //  2. Press F12 → Console tab
 //  3. Paste this entire script and press Enter
 //  4. Select your chatgpt_export zip file
-//  5. It creates matching Projects and uploads conversations
-//     as knowledge documents
+//  5. It creates Claude Projects matching each export folder
+//     and imports conversations as new Claude chats.
+//     If project slots are limited, small folders are merged.
 // ============================================================
 
 (async function () {
@@ -40,16 +41,16 @@
       }
       #claude-imp-box h2 {
         margin: 0 0 0.3rem 0; font-size: 1.4rem; font-weight: 600;
-        background: linear-gradient(135deg, #d4a574, #c17f59);
+        background: linear-gradient(135deg, #6c63ff, #4ade80);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       }
       .imp-subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }
       .imp-btn {
         padding: 0.8rem 2rem; border: none; border-radius: 8px;
         font-size: 0.95rem; font-weight: 600; cursor: pointer;
-        background: #d4a574; color: #1a1a2e; transition: all 0.2s;
+        background: #6c63ff; color: white; transition: all 0.2s;
       }
-      .imp-btn:hover { background: #c17f59; transform: translateY(-1px); }
+      .imp-btn:hover { background: #4f46e5; transform: translateY(-1px); }
       .imp-btn-close {
         margin-top: 1.5rem; padding: 0.7rem 2rem; background: #6c63ff;
         color: white; border: none; border-radius: 8px; font-size: 0.95rem;
@@ -64,7 +65,7 @@
       }
       #imp-progress-fill {
         height: 100%; width: 0%; border-radius: 4px;
-        background: linear-gradient(90deg, #d4a574, #4ade80);
+        background: linear-gradient(90deg, #6c63ff, #4ade80);
         transition: width 0.3s ease;
       }
       #imp-counter { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.3rem; }
@@ -93,17 +94,17 @@
         background: #0e0e10; border-radius: 8px; font-size: 0.85rem;
       }
       .imp-proj-item { padding: 0.3rem 0; color: #a0a0b0; }
-      .imp-proj-item span { color: #d4a574; font-weight: 600; }
+      .imp-proj-item span { color: #6c63ff; font-weight: 600; }
     </style>
     <div id="claude-imp-box">
       <h2>Claude Conversation Importer</h2>
-      <div class="imp-subtitle">Import ChatGPT conversations into a Claude Project</div>
+      <div class="imp-subtitle">Import ChatGPT conversations into Claude Projects</div>
 
       <!-- Auth Capture -->
       <div id="imp-auth">
         <p style="color:#a0a0b0;font-size:0.85rem;margin-bottom:1.2rem;line-height:1.6">
           Click the button below to minimize this overlay, then
-          say <strong style="color:#d4a574">&ldquo;Hello&rdquo;</strong> to Claude
+          say <strong style="color:#6c63ff">&ldquo;Hello&rdquo;</strong> to Claude
           so that your credentials can be captured.
         </p>
         <button class="imp-btn" id="imp-auth-btn">Minimize &amp; Capture</button>
@@ -113,8 +114,8 @@
       <!-- File Select -->
       <div id="imp-select" style="display:none">
         <p style="color:#a0a0b0;font-size:0.85rem;margin-bottom:1.2rem;line-height:1.6">
-          Select your <code style="background:rgba(212,165,116,0.15);padding:0.15rem 0.4rem;border-radius:4px;color:#d4a574">chatgpt_export.zip</code>
-          file.<br>All conversations will be uploaded as knowledge documents<br>into one existing Claude Project.
+          Select your <code style="background:rgba(108,99,255,0.15);padding:0.15rem 0.4rem;border-radius:4px;color:#6c63ff">chatgpt_export.zip</code>
+          file.<br>Each folder becomes a Claude Project with its conversations<br>imported as new Claude chats.
         </p>
         <input type="file" id="imp-file-input" accept=".zip" />
         <button class="imp-btn" id="imp-select-btn">Select Zip File</button>
@@ -174,6 +175,7 @@
   // We intercept a real API call (user sends a message) to capture them,
   // then replay those exact headers via un-patched native fetch.
   let _capturedHeaders = {};
+  let _capturedModel = '';
 
   // Get un-patched native fetch via hidden iframe (bypasses Claude's wrapper)
   const _iframe = document.createElement('iframe');
@@ -204,6 +206,14 @@
             input.headers.forEach((v, k) => { if (!headers[k]) headers[k] = v; });
           }
 
+          // Try to capture the model from the request body
+          if (init.body && typeof init.body === 'string') {
+            try {
+              const bodyData = JSON.parse(init.body);
+              if (bodyData.model && !_capturedModel) _capturedModel = bodyData.model;
+            } catch (_) {}
+          }
+
           if (Object.keys(headers).length > 0) {
             _capturedHeaders = headers;
             window.fetch = wrappedFetch; // restore
@@ -224,6 +234,7 @@
       const keys = Object.keys(headers);
       console.log(`✅ Captured ${keys.length} headers:`, keys);
       console.log('Header values:', JSON.stringify(headers, null, 2));
+      if (_capturedModel) console.log(`✅ Captured model: ${_capturedModel}`);
 
       // Show overlay again with file select
       overlay.style.display = 'flex';
@@ -356,21 +367,6 @@
     return resp.json();
   }
 
-  async function apiPostForm(url, formData) {
-    // No Content-Type — browser sets multipart boundary automatically
-    const resp = await _nativeFetch(url, {
-      method: 'POST',
-      credentials: 'include',
-      headers: buildHeaders(),
-      body: formData,
-    });
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '');
-      throw new Error(`POST ${resp.status}: ${text.slice(0, 300)}`);
-    }
-    return resp.json();
-  }
-
   // Fetch all organizations
   async function getOrgs() {
     const orgs = await apiGet('/api/organizations');
@@ -383,12 +379,55 @@
     return apiGet(`/api/organizations/${orgId}/projects`);
   }
 
-  // Upload a document to a project
-  async function uploadDocument(orgId, projectId, fileName, content) {
-    return apiPost(`/api/organizations/${orgId}/projects/${projectId}/docs`, {
-      file_name: fileName,
-      content: content,
+  // Create a new project
+  async function createProject(orgId, name, description) {
+    return apiPost(`/api/organizations/${orgId}/projects`, {
+      name: name,
+      description: description || `Imported from ChatGPT — ${name}`,
+      is_private: true,
     });
+  }
+
+  // Create a new chat conversation inside a project
+  async function createConversation(orgId, name, projectId) {
+    const uuid = crypto.randomUUID();
+    const body = { uuid, name };
+    if (projectId) body.project_uuid = projectId;
+    await apiPost(`/api/organizations/${orgId}/chat_conversations`, body);
+    return uuid;
+  }
+
+  // Send a message to a conversation and consume the streaming response.
+  // The stream MUST be fully drained so the server commits the conversation state.
+  async function sendMessage(orgId, convId, message) {
+    const body = {
+      prompt: message,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    };
+    if (_capturedModel) body.model = _capturedModel;
+    const resp = await _nativeFetch(
+      `/api/organizations/${orgId}/chat_conversations/${convId}/completion`,
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: buildHeaders('application/json'),
+        body: JSON.stringify(body),
+      }
+    );
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`Completion ${resp.status}: ${text.slice(0, 300)}`);
+    }
+    // Drain the streaming response so the server saves the conversation
+    const reader = resp.body.getReader();
+    try {
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   // Generic picker — shows a list of items as buttons and returns the chosen one
@@ -447,9 +486,9 @@
 
     logMsg(`Found ${zipFiles.length} files in zip`, 'imp-ok');
 
-    // Step 2: Decompress all files into a flat list with folder-prefixed names
+    // Step 2: Decompress and group files by their original folder
     ui.status.textContent = 'Decompressing files...';
-    const allFiles = [];  // [{fileName, content}]
+    const folderMap = {};  // folderName -> [{fileName, content}]
     for (const zf of zipFiles) {
       let decompressed;
       try {
@@ -459,20 +498,25 @@
         continue;
       }
       const parts = zf.name.split('/');
-      let fileName;
+      let folder, fileName;
       if (parts.length >= 2) {
-        const folder = parts[0];
-        const base = parts.slice(1).join('/');
-        fileName = `[${folder}] ${base}`;
+        folder = parts[0];
+        fileName = parts.slice(1).join('/');
       } else {
+        folder = 'No Project';
         fileName = parts[0];
       }
+      if (!folderMap[folder]) folderMap[folder] = [];
       const content = new TextDecoder().decode(decompressed);
-      allFiles.push({ fileName, content });
+      folderMap[folder].push({ fileName, content });
     }
 
-    const totalFiles = allFiles.length;
-    logMsg(`${totalFiles} conversations ready to upload`, 'imp-ok');
+    const folderNames = Object.keys(folderMap).sort();
+    const totalFiles = Object.values(folderMap).reduce((s, f) => s + f.length, 0);
+    for (const name of folderNames) {
+      logMsg(`  ${name}: ${folderMap[name].length} files`, 'imp-ok');
+    }
+    logMsg(`${folderNames.length} folders, ${totalFiles} total conversations`, 'imp-ok');
 
     // Step 3: Pick organization (show picker if multiple)
     ui.status.textContent = 'Getting organization info...';
@@ -503,68 +547,154 @@
     const orgId = chosenOrg.uuid;
     logMsg(`Organization: ${chosenOrg.name} (${orgId.slice(0, 8)}...)`, 'imp-ok');
 
-    // Step 4: List existing projects and let user pick one
-    ui.status.textContent = 'Loading projects...';
+    // Step 4: Check existing projects to know available slots
+    ui.status.textContent = 'Checking existing projects...';
     let existingProjects = [];
     try {
       existingProjects = await listProjects(orgId);
     } catch (err) {
-      ui.status.textContent = 'Failed to list projects: ' + err.message;
-      logMsg(err.message, 'imp-err');
-      return;
+      logMsg('Warning: Could not list existing projects: ' + err.message, 'imp-warn');
     }
-    if (existingProjects.length === 0) {
-      ui.status.textContent = 'No existing projects found. Create one in Claude first.';
-      logMsg('No projects found — create at least one project in Claude and re-run.', 'imp-err');
-      return;
+    const existingNames = new Map();
+    for (const p of existingProjects) {
+      existingNames.set(p.name.toLowerCase(), p.uuid);
+    }
+    const MAX_PROJECTS = 10;
+    const usedSlots = existingProjects.length;
+    const availableSlots = Math.max(0, MAX_PROJECTS - usedSlots);
+    logMsg(`${usedSlots} existing projects, ${availableSlots} slots available (max ${MAX_PROJECTS})`, availableSlots > 0 ? 'imp-ok' : 'imp-warn');
+
+    // Step 5: Build project assignments — map each folder to a project name
+    // Reuse existing projects by name match; create new ones for the rest.
+    // If more folders than available slots, merge the smallest into "ChatGPT Import (Misc)".
+    const assignments = {};  // projectName -> [{fileName, content}]
+    const foldersNeedingNewProject = [];
+
+    for (const folder of folderNames) {
+      const existingId = existingNames.get(folder.toLowerCase());
+      if (existingId) {
+        // Reuse existing project
+        assignments[folder] = { files: folderMap[folder], id: existingId, reused: true };
+        logMsg(`Will reuse existing project: ${folder}`, 'imp-warn');
+      } else {
+        foldersNeedingNewProject.push(folder);
+      }
     }
 
-    // Show project picker
-    ui.progress.style.display = 'none';
-    ui.pick.style.display = 'block';
-    logMsg(`Found ${existingProjects.length} existing projects`, 'imp-ok');
-    const chosenProject = await showPicker('Choose a project:', existingProjects, 'name');
-    const projectId = chosenProject.uuid;
-    logMsg(`Selected project: ${chosenProject.name}`, 'imp-ok');
-    ui.pick.style.display = 'none';
-    ui.progress.style.display = 'block';
+    // Sort folders needing new projects by file count (largest first)
+    foldersNeedingNewProject.sort((a, b) => folderMap[b].length - folderMap[a].length);
 
-    // Step 5: Upload all files to the chosen project
-    let filesUploaded = 0;
-    let fileErrors = 0;
+    if (foldersNeedingNewProject.length <= availableSlots) {
+      // Enough slots — one project per folder
+      for (const folder of foldersNeedingNewProject) {
+        assignments[folder] = { files: folderMap[folder], id: null, reused: false };
+      }
+    } else {
+      // Not enough slots — keep the largest folders as their own projects,
+      // merge the rest into a single "ChatGPT Import (Misc)" project
+      const keepCount = Math.max(0, availableSlots - 1); // reserve 1 slot for Misc
+      const keepFolders = foldersNeedingNewProject.slice(0, keepCount);
+      const mergeFolders = foldersNeedingNewProject.slice(keepCount);
 
-    for (let i = 0; i < allFiles.length; i++) {
-      const f = allFiles[i];
-      const pct = Math.round(((i + 1) / totalFiles) * 100);
-      ui.bar.style.width = pct + '%';
-      ui.counter.textContent = `${i + 1} / ${totalFiles} files`;
-      ui.current.textContent = f.fileName;
-      ui.status.textContent = `Uploading to ${chosenProject.name}...`;
-
-      try {
-        await uploadDocument(orgId, projectId, f.fileName, f.content);
-        filesUploaded++;
-      } catch (err) {
-        fileErrors++;
-        logMsg(`Error: ${f.fileName} — ${err.message}`, 'imp-err');
+      for (const folder of keepFolders) {
+        assignments[folder] = { files: folderMap[folder], id: null, reused: false };
       }
 
-      await sleep(DELAY_MS);
+      // Merge remaining folders — prefix filenames with folder name
+      const miscFiles = [];
+      for (const folder of mergeFolders) {
+        for (const f of folderMap[folder]) {
+          miscFiles.push({ fileName: `[${folder}] ${f.fileName}`, content: f.content });
+        }
+      }
+      if (miscFiles.length > 0) {
+        const miscName = 'Miscellaneous';
+        const existingMiscId = existingNames.get(miscName.toLowerCase());
+        assignments[miscName] = { files: miscFiles, id: existingMiscId || null, reused: !!existingMiscId };
+        logMsg(`Merging ${mergeFolders.length} folders into "${miscName}" (${miscFiles.length} files)`, 'imp-warn');
+      }
     }
 
-    // Step 6: Show results
+    const projectNames = Object.keys(assignments);
+    logMsg(`Plan: ${projectNames.length} projects (${projectNames.filter(n => !assignments[n].reused).length} new, ${projectNames.filter(n => assignments[n].reused).length} reused)`, 'imp-ok');
+
+    // Step 6: Create projects and upload files
+    let projectsCreated = 0;
+    let projectsReused = 0;
+    let filesUploaded = 0;
+    let fileErrors = 0;
+    let fileIndex = 0;
+    const projectResults = {};
+
+    for (const projectName of projectNames) {
+      const assignment = assignments[projectName];
+      let projectId = assignment.id;
+
+      if (assignment.reused) {
+        projectsReused++;
+      } else {
+        // Create the project
+        try {
+          ui.status.textContent = `Creating project: ${projectName}...`;
+          const proj = await createProject(orgId, projectName);
+          projectId = proj.uuid;
+          projectsCreated++;
+          logMsg(`Created project: ${projectName}`, 'imp-ok');
+          await sleep(DELAY_MS);
+        } catch (err) {
+          logMsg(`Failed to create project "${projectName}": ${err.message}`, 'imp-err');
+          fileErrors += assignment.files.length;
+          fileIndex += assignment.files.length;
+          continue;
+        }
+      }
+
+      projectResults[projectName] = { total: assignment.files.length, uploaded: 0 };
+
+      // Create a conversation for each file
+      for (const f of assignment.files) {
+        fileIndex++;
+        const pct = Math.round((fileIndex / totalFiles) * 100);
+        ui.bar.style.width = pct + '%';
+        ui.counter.textContent = `${fileIndex} / ${totalFiles} conversations`;
+        ui.current.textContent = `${projectName} / ${f.fileName}`;
+        ui.status.textContent = `Creating conversation in ${projectName}...`;
+
+        try {
+          const title = f.fileName.replace(/\.txt$/i, '');
+          const convId = await createConversation(orgId, title, projectId);
+          await sendMessage(orgId, convId, f.content);
+          filesUploaded++;
+          projectResults[projectName].uploaded++;
+        } catch (err) {
+          fileErrors++;
+          logMsg(`Error: ${f.fileName} — ${err.message}`, 'imp-err');
+        }
+
+        await sleep(DELAY_MS);
+      }
+    }
+
+    // Step 7: Show results
     ui.progress.style.display = 'none';
     ui.done.style.display = 'block';
 
     const summary = document.getElementById('imp-summary');
     summary.innerHTML = `
-      <strong>${filesUploaded}</strong> conversations uploaded to <strong>${chosenProject.name}</strong>
+      <strong>${projectsCreated}</strong> projects created
+      ${projectsReused > 0 ? `<br><span style="color:#fbbf24">${projectsReused} projects reused</span>` : ''}
+      <br><strong>${filesUploaded}</strong> conversations uploaded
       ${fileErrors > 0 ? `<br><span style="color:#f87171">${fileErrors} errors</span>` : ''}
     `;
 
-    document.getElementById('imp-projects-list').style.display = 'none';
+    const projList = document.getElementById('imp-projects-list');
+    projList.style.display = '';
+    projList.innerHTML = '<div style="font-weight:600;margin-bottom:0.5rem;color:#e0e0e0">Projects</div>';
+    for (const [name, result] of Object.entries(projectResults).sort((a, b) => a[0].localeCompare(b[0]))) {
+      projList.innerHTML += `<div class="imp-proj-item"><span>${result.uploaded}</span> / ${result.total} — ${name}</div>`;
+    }
 
-    console.log(`✅ Claude Import complete: ${filesUploaded} docs uploaded to "${chosenProject.name}", ${fileErrors} errors`);
+    console.log(`✅ Claude Import complete: ${projectsCreated} projects created, ${projectsReused} reused, ${filesUploaded} conversations created, ${fileErrors} errors`);
   }
 
 })();
