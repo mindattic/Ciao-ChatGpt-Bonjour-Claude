@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChatGPT to Claude — Documentation</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 16px; line-height: 1.7; color: #c9d1d9; background: #0d1117;
+  }
+
+  /* ── Layout ───────────────────────────────────────────────── */
+  .wrapper { max-width: 960px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+
+  /* ── Typography ───────────────────────────────────────────── */
+  h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: .5rem; color: #e6edf3;
+       border-bottom: 1px solid #21262d; padding-bottom: .6rem; }
+  h2 { font-size: 1.55rem; font-weight: 600; margin: 2.5rem 0 .8rem; color: #e6edf3;
+       border-bottom: 1px solid #21262d; padding-bottom: .4rem; }
+  h3 { font-size: 1.2rem; font-weight: 600; margin: 1.8rem 0 .6rem; color: #e6edf3; }
+  p  { margin: 0 0 1rem; }
+  a  { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  strong { color: #e6edf3; }
+  em { font-style: italic; }
+  hr { border: none; border-top: 1px solid #21262d; margin: 2rem 0; }
+
+  /* ── Inline code & code blocks ────────────────────────────── */
+  code {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.88em; padding: .15em .4em; border-radius: 4px;
+    background: #161b22; color: #d4a574;
+  }
+  pre { background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+        padding: 1rem 1.2rem; overflow-x: auto; margin: 0 0 1rem; }
+  pre code { padding: 0; background: transparent; color: #c9d1d9; font-size: 0.85rem; }
+
+  /* ── Lists ────────────────────────────────────────────────── */
+  ul, ol { margin: 0 0 1rem 1.8rem; }
+  li { margin: .25rem 0; }
+  li > ul, li > ol { margin-bottom: 0; }
+
+  /* ── Blockquotes ──────────────────────────────────────────── */
+  blockquote {
+    border-left: 4px solid #3b82f6; padding: .6rem 1rem; margin: 0 0 1rem;
+    background: rgba(56,139,253,.08); border-radius: 0 6px 6px 0;
+  }
+  blockquote p:last-child { margin-bottom: 0; }
+
+  /* ── Tables ───────────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; margin: 0 0 1rem; font-size: .92rem; }
+  th, td { border: 1px solid #21262d; padding: .55rem .75rem; text-align: left; }
+  th { background: #161b22; color: #e6edf3; font-weight: 600; }
+  tr:nth-child(even) td { background: rgba(22,27,34,.45); }
+
+  /* ── TOC ──────────────────────────────────────────────────── */
+  .toc { background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+         padding: 1.2rem 1.5rem; margin: 1rem 0 1.5rem; }
+  .toc ul { list-style: none; margin: 0; padding: 0; }
+  .toc > ul > li { margin: .35rem 0; }
+  .toc ul ul { margin-left: 1.3rem; }
+  .toc ul ul li { margin: .2rem 0; }
+  .toc a { color: #58a6ff; }
+
+  /* ── Screenshot mockup (shared) ───────────────────────────── */
+  .screenshot {
+    margin: 1.5rem 0; border-radius: 16px; overflow: hidden;
+    border: 1px solid #2a2a4a; position: relative;
+  }
+  .screenshot-label {
+    position: absolute; top: 10px; right: 14px; font-size: .65rem; text-transform: uppercase;
+    letter-spacing: .08em; color: #555; font-weight: 600;
+  }
+  .shot-inner {
+    background: #1a1a2e; padding: 2.2rem 2.5rem; text-align: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .shot-inner h2 { border: none; margin: 0 0 .2rem; padding: 0; font-size: 1.35rem; }
+  .shot-subtitle { color: #888; font-size: .82rem; margin-bottom: 1.3rem; }
+  .shot-counter { font-size: 1.05rem; font-weight: 600; color: #e0e0e0; margin-bottom: .25rem; }
+  .shot-bar-bg { width: 100%; height: 8px; background: #0e0e10; border-radius: 4px;
+                 overflow: hidden; margin: .8rem 0; }
+  .shot-bar-fill { height: 100%; border-radius: 4px; }
+  .shot-status { font-size: .82rem; color: #a0a0b0; }
+  .shot-current {
+    font-size: .78rem; color: #ccc; margin-top: .5rem;
+    padding: .45rem .7rem; background: #0e0e10; border-radius: 6px;
+    font-family: 'SFMono-Regular', Consolas, monospace; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .shot-log {
+    max-height: 90px; overflow-y: auto; margin-top: .8rem; font-size: .7rem;
+    font-family: 'SFMono-Regular', Consolas, monospace; padding: .5rem .6rem;
+    background: #0e0e10; border-radius: 6px; text-align: left;
+    border: 1px solid #2a2a4a; color: #888;
+  }
+  .shot-log .warn { color: #fbbf24; }
+  .shot-log .err  { color: #f87171; }
+  .shot-log .ok   { color: #4ade80; }
+  .shot-btn {
+    margin-top: 1.2rem; padding: .55rem 1.6rem; border: none; border-radius: 8px;
+    font-size: .9rem; font-weight: 600; cursor: default; display: inline-block;
+  }
+
+  /* exporter accent */
+  .exp-accent { background: linear-gradient(135deg, #6c63ff, #4ade80);
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .exp-bar { background: linear-gradient(90deg, #6c63ff, #4ade80); }
+  .exp-btn { background: #6c63ff; color: #fff; }
+
+  /* importer accent */
+  .imp-accent { background: linear-gradient(135deg, #d4a574, #c17f59);
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .imp-bar { background: linear-gradient(90deg, #d4a574, #4ade80); }
+  .imp-btn { background: #d4a574; color: #1a1a2e; }
+  .imp-btn-close { background: #6c63ff; color: #fff; }
+
+  /* importer file-select mockup */
+  .imp-file-hint { color: #a0a0b0; font-size: .82rem; margin-bottom: 1rem; line-height: 1.55; }
+  .imp-file-hint code { background: rgba(212,165,116,.15); padding: .1rem .35rem;
+                        border-radius: 4px; color: #d4a574; }
+
+  /* importer done mockup */
+  .shot-done-check { font-size: 2.8rem; margin-bottom: .6rem; color: #4ade80; }
+  .shot-done-title { font-size: 1.25rem; font-weight: 600; color: #4ade80; margin-bottom: .6rem; }
+  .shot-summary { font-size: .88rem; color: #a0a0b0; line-height: 1.75; }
+  .shot-summary strong { color: #e0e0e0; }
+  .shot-projects-list {
+    margin-top: .8rem; text-align: left; padding: .8rem; background: #0e0e10;
+    border-radius: 8px; font-size: .82rem;
+  }
+  .shot-proj-item { padding: .2rem 0; color: #a0a0b0; }
+  .shot-proj-item span { color: #d4a574; font-weight: 600; }
+
+  /* ── Flow diagram ─────────────────────────────────────────── */
+  .flow-diagram {
+    display: flex; align-items: center; justify-content: center; gap: .6rem;
+    margin: 1.5rem 0; flex-wrap: wrap;
+  }
+  .flow-box {
+    padding: .6rem 1.1rem; border-radius: 8px; font-size: .82rem;
+    font-weight: 600; text-align: center; min-width: 100px;
+  }
+  .flow-chatgpt { background: #1a3a2a; color: #4ade80; border: 1px solid #2a5a3a; }
+  .flow-zip     { background: #2a2040; color: #a78bfa; border: 1px solid #3a3060; }
+  .flow-claude  { background: #2a1f18; color: #d4a574; border: 1px solid #4a3528; }
+  .flow-arrow   { font-size: 1.2rem; color: #555; }
+
+  /* ── Back to top ──────────────────────────────────────────── */
+  .back-top { display: inline-block; margin-top: 2rem; font-size: .85rem; }
+
+  /* ── Responsive ───────────────────────────────────────────── */
+  @media (max-width: 640px) {
+    .wrapper { padding: 1rem; }
+    .shot-inner { padding: 1.5rem 1.2rem; }
+    .flow-diagram { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  HEADER                                                    -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h1 id="top">ChatGPT to Claude</h1>
+<p>Migrate <strong>all</strong> your ChatGPT conversations into Claude Projects with two browser-console scripts — no API keys, no extensions, no external tools.</p>
+
+<table>
+  <thead><tr><th>Step</th><th>Script</th><th>Where to run</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>ChatGPTConversationExporter.js</code></td><td>chatgpt.com</td><td>Exports every conversation as a <code>.txt</code> inside a <code>.zip</code>, organized by project folder.</td></tr>
+    <tr><td>2</td><td><code>ClaudeConversationImporter.js</code></td><td>claude.ai</td><td>Reads the <code>.zip</code>, creates matching Claude Projects, and uploads each conversation as a knowledge document.</td></tr>
+  </tbody>
+</table>
+
+<p>Both scripts work the same way: open <strong>F12 → Console</strong>, paste the script, hit <strong>Enter</strong>. They reuse the Authorization token and Cookie the browser already holds for the active session — nothing to configure.</p>
+
+<!-- Flow diagram -->
+<div class="flow-diagram">
+  <div class="flow-box flow-chatgpt">chatgpt.com<br><small style="font-weight:400">Exporter script</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box flow-zip">.zip file<br><small style="font-weight:400">on your disk</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box flow-claude">claude.ai<br><small style="font-weight:400">Importer script</small></div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  TABLE OF CONTENTS                                         -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="toc">Table of Contents</h2>
+<nav class="toc">
+  <ul>
+    <li><a href="#requirements">Requirements</a></li>
+    <li><a href="#step-1">Step 1 — Export from ChatGPT</a>
+      <ul>
+        <li><a href="#export-usage">Usage</a></li>
+        <li><a href="#export-how">How It Works</a></li>
+        <li><a href="#export-endpoints">ChatGPT API Endpoints Used</a></li>
+        <li><a href="#export-config">Configuration</a></li>
+        <li><a href="#export-project">Project / Folder Detection</a></li>
+        <li><a href="#export-format">Conversation Format</a></li>
+        <li><a href="#export-dupes">Duplicate Filename Handling</a></li>
+        <li><a href="#export-deps">External Dependencies</a></li>
+      </ul>
+    </li>
+    <li><a href="#step-2">Step 2 — Import into Claude</a>
+      <ul>
+        <li><a href="#import-usage">Usage</a></li>
+        <li><a href="#import-how">How It Works</a></li>
+        <li><a href="#import-endpoints">Claude API Endpoints Used</a></li>
+        <li><a href="#import-config">Configuration</a></li>
+        <li><a href="#import-zip">Built-in Zip Reader</a></li>
+        <li><a href="#import-dupes">Duplicate Project Handling</a></li>
+      </ul>
+    </li>
+    <li><a href="#privacy">Privacy &amp; Security</a></li>
+    <li><a href="#overlays">UI Overlays</a></li>
+    <li><a href="#limitations">Limitations &amp; Known Constraints</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#license">License</a></li>
+  </ul>
+</nav>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  REQUIREMENTS                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="requirements">Requirements</h2>
+<ul>
+  <li>A modern browser (Chrome, Edge, Firefox, etc.).</li>
+  <li>An active, logged-in session on <strong>chatgpt.com</strong> (Step 1) and <strong>claude.ai</strong> (Step 2).</li>
+  <li>No extensions, API keys, or external tools required.</li>
+</ul>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  STEP 1 — EXPORT                                          -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="step-1">Step 1 — Export from ChatGPT</h2>
+
+<h3 id="export-usage">Usage</h3>
+<ol>
+  <li>Go to <a href="https://chatgpt.com">chatgpt.com</a> and make sure you are <strong>logged in</strong>.</li>
+  <li>Press <strong>F12</strong> (or right-click → <em>Inspect</em>) to open <strong>Developer Tools</strong>.</li>
+  <li>Click the <strong>Console</strong> tab.</li>
+  <li>Copy the entire contents of <strong><code>ChatGPTConversationExporter.js</code></strong>.</li>
+  <li><strong>Paste</strong> it into the console and press <strong>Enter</strong>.</li>
+  <li>A full-screen progress overlay will appear — keep the tab open until the export finishes.</li>
+  <li>When complete, a <code>chatgpt_export_YYYY-MM-DD.zip</code> file will download automatically.</li>
+</ol>
+
+<!-- ── SCREENSHOT: Exporter — in-progress ────────────────── -->
+<div class="screenshot" aria-label="Exporter overlay screenshot">
+  <span class="screenshot-label">UI Preview — Exporter (in-progress)</span>
+  <div class="shot-inner">
+    <h2 class="exp-accent" style="font-size:1.35rem;">ChatGPT Exporter</h2>
+    <div class="shot-subtitle">Exporting conversations — please keep this tab open</div>
+    <div class="shot-counter">42 / 128 conversations</div>
+    <div class="shot-bar-bg"><div class="shot-bar-fill exp-bar" style="width:33%;"></div></div>
+    <div class="shot-status">Fetching conversation 42 of 128…</div>
+    <div class="shot-current">Work Projects / Refactor auth module</div>
+    <div class="shot-log">
+      <div class="ok">✓ Loaded conversation list (128 items)</div>
+      <div>Exporting: No Project / Quick question</div>
+      <div>Exporting: Work Projects / Refactor auth module</div>
+      <div class="warn">No messages: Work Projects / empty-test</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCREENSHOT: Exporter — complete ───────────────────── -->
+<div class="screenshot" aria-label="Exporter overlay screenshot — complete">
+  <span class="screenshot-label">UI Preview — Exporter (complete)</span>
+  <div class="shot-inner">
+    <h2 class="exp-accent" style="font-size:1.4rem;">Export Complete!</h2>
+    <div class="shot-bar-bg"><div class="shot-bar-fill exp-bar" style="width:100%;"></div></div>
+    <div class="shot-status"><strong>126</strong> conversations exported<br><span style="color:#fbbf24;">2 errors</span><br><br><strong>Projects:</strong></div>
+    <div class="shot-current" style="white-space:pre;text-align:left;">  47 — Work Projects
+  31 — Side Projects
+  28 — No Project
+  12 — Custom GPT (g-abc123…)
+   8 — Research</div>
+    <div style="margin-top:1.2rem;"><span class="shot-btn exp-btn">Close</span></div>
+  </div>
+</div>
+
+<h3 id="export-how">How It Works</h3>
+<ol>
+  <li><strong>Authentication</strong> — Retrieves your session access token by calling <code>/api/auth/session</code>. The token is sent as a <code>Bearer</code> token in the <code>Authorization</code> header for all subsequent requests.</li>
+  <li><strong>Discovery</strong> — Paginates through <code>/backend-api/conversations</code> (100 conversations per page, ordered by <code>updated</code>) to build a complete list of every conversation in your account.</li>
+  <li><strong>Fetch</strong> — For each conversation, fetches the full message tree from <code>/backend-api/conversation/{id}</code>.</li>
+  <li><strong>Extract</strong> — Walks the message tree using a depth-first traversal (iterative stack). Each node's <code>message.content.parts</code> array is joined into plain text. Messages are labelled by role (<code>You</code>, <code>ChatGPT</code>, <code>System</code>, <code>Tool</code>).</li>
+  <li><strong>Package</strong> — Writes each conversation as a <code>.txt</code> file inside a zip archive, organized into folders by project/workspace name.</li>
+  <li><strong>Download</strong> — Generates the zip blob in-browser and triggers an automatic download.</li>
+</ol>
+
+<h3 id="export-endpoints">ChatGPT API Endpoints Used</h3>
+<table>
+  <thead><tr><th>Endpoint</th><th>Method</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>/api/auth/session</code></td><td>GET</td><td>Retrieve the current session access token</td></tr>
+    <tr><td><code>/backend-api/conversations?offset={n}&amp;limit=100&amp;order=updated</code></td><td>GET</td><td>Paginate through the conversation list</td></tr>
+    <tr><td><code>/backend-api/conversation/{id}</code></td><td>GET</td><td>Fetch the full message tree for a single conversation</td></tr>
+  </tbody>
+</table>
+
+<h3 id="export-config">Configuration</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>DELAY_MS</code></td><td><code>1200</code></td><td>Milliseconds to wait between API calls (rate-limiting / politeness delay).</td></tr>
+    <tr><td><code>BASE</code></td><td><code>/backend-api</code></td><td>Base path for ChatGPT backend API calls.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="export-project">Project / Folder Detection</h3>
+<p>Each conversation is placed into a folder determined by the following priority:</p>
+<ol>
+  <li><code>conv.project</code> — if the conversation has a <code>project</code> object, its <code>.name</code> or <code>.title</code> is used.</li>
+  <li><code>conv.workspace</code> — same logic as above, checked as a fallback.</li>
+  <li><code>conv.gizmo_id</code> — if the conversation was with a Custom GPT, the folder is named <code>Custom GPT ({first 12 chars of gizmo_id})</code>.</li>
+  <li><strong>Fallback</strong> — conversations that match none of the above go into a <code>No Project</code> folder.</li>
+</ol>
+
+<h3 id="export-format">Conversation Format</h3>
+<p>Each <code>.txt</code> file is formatted as:</p>
+<pre><code>======================================================================
+  Conversation Title
+======================================================================
+  Date: 1/15/2025, 3:42:00 PM
+
+--- You ---
+User message text
+
+--- ChatGPT ---
+Assistant response text
+
+======================================================================
+  End: Conversation Title
+======================================================================</code></pre>
+
+<p>Roles are mapped as follows:</p>
+<table>
+  <thead><tr><th>API role</th><th>Display label</th></tr></thead>
+  <tbody>
+    <tr><td><code>user</code></td><td><code>You</code></td></tr>
+    <tr><td><code>assistant</code></td><td><code>ChatGPT</code></td></tr>
+    <tr><td><code>system</code></td><td><code>System</code></td></tr>
+    <tr><td><code>tool</code></td><td><code>Tool</code></td></tr>
+    <tr><td>anything else</td><td>raw role string</td></tr>
+  </tbody>
+</table>
+
+<h3 id="export-dupes">Duplicate Filename Handling</h3>
+<p>If two conversations in the same project have the same title, subsequent files get a numeric suffix:</p>
+<pre><code>My Project/Some Title.txt
+My Project/Some Title (1).txt
+My Project/Some Title (2).txt</code></pre>
+<p>File and folder names are sanitized: characters <code>&lt; &gt; : " / \ | ? *</code> are replaced with <code>_</code>, leading/trailing dots are stripped, and names are truncated to 100 characters.</p>
+
+<h3 id="export-deps">External Dependencies</h3>
+<ul>
+  <li><strong><a href="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js">JSZip 3.10.1</a></strong> — loaded dynamically from the cdnjs CDN at runtime to create the zip archive. No pre-installation required.</li>
+</ul>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  STEP 2 — IMPORT                                          -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="step-2">Step 2 — Import into Claude</h2>
+
+<h3 id="import-usage">Usage</h3>
+<ol>
+  <li>Go to <a href="https://claude.ai">claude.ai</a> and make sure you are <strong>logged in</strong>.</li>
+  <li>Press <strong>F12</strong> (or right-click → <em>Inspect</em>) to open <strong>Developer Tools</strong>.</li>
+  <li>Click the <strong>Console</strong> tab.</li>
+  <li>Copy the entire contents of <strong><code>ClaudeConversationImporter.js</code></strong>.</li>
+  <li><strong>Paste</strong> it into the console and press <strong>Enter</strong>.</li>
+  <li>A file picker dialog will appear — select your <code>chatgpt_export_YYYY-MM-DD.zip</code> file from Step 1.</li>
+  <li>The script does the rest automatically. A progress overlay shows live status.</li>
+  <li>When finished, a summary screen shows projects created and documents uploaded. Click <strong>Close</strong> to dismiss.</li>
+</ol>
+
+<!-- ── SCREENSHOT: Importer — file select ────────────────── -->
+<div class="screenshot" aria-label="Importer overlay screenshot — file selection">
+  <span class="screenshot-label">UI Preview — Importer (file select)</span>
+  <div class="shot-inner">
+    <h2 class="imp-accent" style="font-size:1.35rem;">Claude Importer</h2>
+    <div class="shot-subtitle">Import ChatGPT conversations into Claude Projects</div>
+    <div class="imp-file-hint">
+      Select your <code>chatgpt_export.zip</code> file.<br>
+      Each folder becomes a Claude Project, and each conversation<br>
+      is uploaded as a knowledge document.
+    </div>
+    <span class="shot-btn imp-btn">Select Zip File</span>
+  </div>
+</div>
+
+<!-- ── SCREENSHOT: Importer — in-progress ────────────────── -->
+<div class="screenshot" aria-label="Importer overlay screenshot — in-progress">
+  <span class="screenshot-label">UI Preview — Importer (in-progress)</span>
+  <div class="shot-inner">
+    <h2 class="imp-accent" style="font-size:1.35rem;">Claude Importer</h2>
+    <div class="shot-subtitle">Import ChatGPT conversations into Claude Projects</div>
+    <div class="shot-counter">18 / 126 files</div>
+    <div class="shot-bar-bg"><div class="shot-bar-fill imp-bar" style="width:14%;"></div></div>
+    <div class="shot-status">Uploading to Work Projects…</div>
+    <div class="shot-current">Work Projects / Refactor auth module.txt</div>
+    <div class="shot-log">
+      <div class="ok">Found 126 files in zip</div>
+      <div class="ok">Found 5 projects with 126 total conversations</div>
+      <div class="ok">Organization ID: a1b2c3d4…</div>
+      <div class="ok">Created project: Work Projects</div>
+      <div class="warn">Project exists, reusing: No Project</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCREENSHOT: Importer — complete ───────────────────── -->
+<div class="screenshot" aria-label="Importer overlay screenshot — complete">
+  <span class="screenshot-label">UI Preview — Importer (complete)</span>
+  <div class="shot-inner">
+    <h2 class="imp-accent" style="font-size:1.35rem;">Claude Importer</h2>
+    <div class="shot-subtitle">Import ChatGPT conversations into Claude Projects</div>
+    <div class="shot-done-check">&#10003;</div>
+    <div class="shot-done-title">Import Complete!</div>
+    <div class="shot-summary">
+      <strong>4</strong> projects created<br>
+      <span style="color:#fbbf24;">1 project already existed (reused)</span><br>
+      <strong>124</strong> conversations uploaded<br>
+      <span style="color:#f87171;">2 errors</span>
+    </div>
+    <div class="shot-projects-list">
+      <div style="font-weight:600;margin-bottom:.4rem;color:#e0e0e0;">Projects</div>
+      <div class="shot-proj-item"><span>47</span> / 47 — Work Projects</div>
+      <div class="shot-proj-item"><span>31</span> / 31 — Side Projects</div>
+      <div class="shot-proj-item"><span>26</span> / 28 — No Project</div>
+      <div class="shot-proj-item"><span>12</span> / 12 — Custom GPT (g-abc123…)</div>
+      <div class="shot-proj-item"><span>8</span> / 8 — Research</div>
+    </div>
+    <div style="margin-top:1.2rem;"><span class="shot-btn imp-btn-close">Close</span></div>
+  </div>
+</div>
+
+<h3 id="import-how">How It Works</h3>
+<ol>
+  <li><strong>File Selection</strong> — Presents a styled file picker (<code>&lt;input type="file" accept=".zip"&gt;</code>). The user selects the export zip.</li>
+  <li><strong>Parse</strong> — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). See <a href="#import-zip">Built-in Zip Reader</a>.</li>
+  <li><strong>Group</strong> — Files are grouped by their top-level folder name. Each folder becomes a Claude Project. Files without a folder go into a <code>No Project</code> project.</li>
+  <li><strong>Organization</strong> — Fetches the current Claude organization ID from <code>/api/organizations</code> (uses the first org returned).</li>
+  <li><strong>Deduplication</strong> — Lists existing Claude Projects and performs a case-insensitive name match. If a project with the same name already exists, it is reused instead of creating a duplicate.</li>
+  <li><strong>Create Projects</strong> — New projects are created via <code>POST /api/organizations/{orgId}/projects</code> with <code>is_private: true</code>.</li>
+  <li><strong>Upload Documents</strong> — Each conversation <code>.txt</code> is uploaded as a multipart form (<code>FormData</code>) to the project's docs endpoint.</li>
+  <li><strong>Summary</strong> — Displays a completion screen with counts of projects created, projects reused, documents uploaded, and errors.</li>
+</ol>
+
+<blockquote>
+  <p><strong>Why does this work?</strong> The script runs inside an active Claude session. The browser already holds your Claude session cookie and authorization token, so the script can call Claude's internal APIs on your behalf — no extra authentication needed.</p>
+</blockquote>
+
+<h3 id="import-endpoints">Claude API Endpoints Used</h3>
+<table>
+  <thead><tr><th>Endpoint</th><th>Method</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>/api/organizations</code></td><td>GET</td><td>Retrieve the current user's organization UUID</td></tr>
+    <tr><td><code>/api/organizations/{orgId}/projects</code></td><td>GET</td><td>List existing projects (for duplicate detection)</td></tr>
+    <tr><td><code>/api/organizations/{orgId}/projects</code></td><td>POST</td><td>Create a new project (<code>name</code>, <code>description</code>, <code>is_private</code>)</td></tr>
+    <tr><td><code>/api/organizations/{orgId}/projects/{projectId}/docs</code></td><td>POST</td><td>Upload a conversation file as a knowledge document (multipart form)</td></tr>
+  </tbody>
+</table>
+
+<h3 id="import-config">Configuration</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>DELAY_MS</code></td><td><code>800</code></td><td>Milliseconds to wait between API calls (rate-limiting / politeness delay).</td></tr>
+  </tbody>
+</table>
+
+<h3 id="import-zip">Built-in Zip Reader</h3>
+<p>The importer includes a minimal, dependency-free zip reader implemented in pure JavaScript. It works by:</p>
+<ol>
+  <li>Scanning backwards from the end of the <code>ArrayBuffer</code> to locate the <strong>End of Central Directory</strong> (EOCD) signature (<code>0x06054b50</code>).</li>
+  <li>Reading the <strong>Central Directory</strong> entries to discover each file's name, compressed size, and local header offset.</li>
+  <li>Parsing each <strong>Local File Header</strong> to calculate the exact data start position.</li>
+  <li>Extracting raw file bytes and decoding them as UTF-8 text.</li>
+</ol>
+<blockquote>
+  <p><strong>Note:</strong> This reader handles <strong>STORE</strong>-method (uncompressed) zip entries. The exporter's JSZip library should produce compatible output. Directories and zero-length entries are skipped.</p>
+</blockquote>
+
+<h3 id="import-dupes">Duplicate Project Handling</h3>
+<p>Before creating any projects, the importer fetches the full list of existing Claude Projects and builds a case-insensitive lookup map. If a project with a matching name already exists:</p>
+<ul>
+  <li>The existing project's UUID is reused.</li>
+  <li>A warning is logged: <code>Project exists, reusing: {name}</code>.</li>
+  <li>Conversation documents are uploaded into the existing project alongside any prior content.</li>
+</ul>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  PRIVACY                                                   -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="privacy">Privacy &amp; Security</h2>
+<ul>
+  <li><strong>No data leaves your browser</strong> — both scripts run entirely within your active browser session. Conversations are read from one service and written to another using the same browser that already has access.</li>
+  <li><strong>No third-party servers</strong> — the only external network request is loading JSZip from the cdnjs CDN (Step 1). The importer has zero external dependencies.</li>
+  <li><strong>No API keys</strong> — both scripts piggyback on the authentication tokens/cookies your browser already holds for chatgpt.com and claude.ai.</li>
+  <li><strong>Credentials are never stored</strong> — access tokens are used in-memory for the duration of the script and discarded when the page is closed.</li>
+</ul>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  UI OVERLAYS                                               -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="overlays">UI Overlays</h2>
+<p>Both scripts render a full-screen overlay with a dark theme (<code>rgba(0,0,0,0.85)</code> backdrop) to show real-time progress:</p>
+
+<h3>Exporter Overlay (<code>ChatGPTConversationExporter.js</code>)</h3>
+<ul>
+  <li><strong>Header</strong> — "ChatGPT Exporter" with a purple-to-green gradient.</li>
+  <li><strong>Progress bar</strong> — Animated fill from 0 % to 100 % as conversations are processed.</li>
+  <li><strong>Counter</strong> — <code>{current} / {total} conversations</code>.</li>
+  <li><strong>Status line</strong> — Current operation description.</li>
+  <li><strong>Current item</strong> — Monospace display of <code>{project} / {title}</code> being exported.</li>
+  <li><strong>Log panel</strong> — Scrollable panel showing warnings (yellow) and errors (red).</li>
+  <li><strong>Close button</strong> — Appears after export completes.</li>
+</ul>
+
+<h3>Importer Overlay (<code>ClaudeConversationImporter.js</code>)</h3>
+<ul>
+  <li><strong>Header</strong> — "Claude Importer" with a warm brown/copper gradient.</li>
+  <li><strong>File selection view</strong> — A styled button to trigger the file picker.</li>
+  <li><strong>Progress view</strong> — Same layout as the exporter (counter, progress bar, status, log).</li>
+  <li><strong>Completion view</strong> — Checkmark icon, summary statistics, per-project breakdown, and a <strong>Close</strong> button.</li>
+</ul>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  LIMITATIONS                                               -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="limitations">Limitations &amp; Known Constraints</h2>
+<table>
+  <thead><tr><th>Area</th><th>Detail</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Rate limiting</strong></td><td>Both scripts use a fixed delay between API calls (<code>DELAY_MS</code>). If you hit rate limits, increase the value.</td></tr>
+    <tr><td><strong>Conversation size</strong></td><td>Very large conversations may approach Claude's knowledge document size limits.</td></tr>
+    <tr><td><strong>Zip compression</strong></td><td>The importer's built-in zip reader expects uncompressed (STORE method) entries. If you modify the exporter's JSZip settings, ensure compression is set to <code>STORE</code>.</td></tr>
+    <tr><td><strong>Browser tab</strong></td><td>The export/import tab must remain open and in the foreground for the full duration of the operation.</td></tr>
+    <tr><td><strong>Session expiry</strong></td><td>Long-running exports (thousands of conversations) may encounter session token expiration. Re-run the script if this happens.</td></tr>
+    <tr><td><strong>Custom GPTs</strong></td><td>Conversations with Custom GPTs are grouped by <code>gizmo_id</code>, which produces folder names like <code>Custom GPT (g-abc123…)</code> rather than the GPT's display name.</td></tr>
+    <tr><td><strong>Message types</strong></td><td>Only text content is extracted. Images, file attachments, and DALL-E generations are not included.</td></tr>
+    <tr><td><strong>Content Security Policy</strong></td><td>Some browsers or browser extensions may block the dynamic loading of JSZip from the CDN. Disable restrictive extensions if the exporter fails to load.</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  TROUBLESHOOTING                                           -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+  <thead><tr><th>Problem</th><th>Solution</th></tr></thead>
+  <tbody>
+    <tr><td><strong>"No accessToken in session response"</strong></td><td>Your ChatGPT session may have expired. Refresh the page, ensure you are logged in, and try again.</td></tr>
+    <tr><td><strong>"Not a valid zip file (no EOCD found)"</strong></td><td>The selected file is not a valid zip archive. Make sure you are selecting the <code>.zip</code> output from Step 1.</td></tr>
+    <tr><td><strong>"Failed to fetch orgs"</strong></td><td>Your Claude session may have expired. Refresh claude.ai, log in, and re-run the importer.</td></tr>
+    <tr><td><strong>HTTP 429 errors</strong></td><td>You are being rate-limited. Increase <code>DELAY_MS</code> (e.g., to <code>2000</code> or higher) and try again.</td></tr>
+    <tr><td><strong>Script does nothing</strong></td><td>Check the browser console for errors. Some browsers require you to type <code>allow pasting</code> first before pasting scripts into the console.</td></tr>
+    <tr><td><strong>JSZip fails to load</strong></td><td>A browser extension (ad blocker, CSP enforcer) may be blocking the CDN request. Try disabling extensions or using an incognito window.</td></tr>
+    <tr><td><strong>Missing conversations</strong></td><td>The exporter skips conversations with zero extractable text messages. Check the log panel for "No messages" warnings.</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  LICENSE                                                   -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="license">License</h2>
+<p>This project is provided as-is for personal use. Use at your own risk.</p>
+
+<a class="back-top" href="#top">↑ Back to top</a>
+
+</div><!-- .wrapper -->
+
+<!-- ── Inline JS: smooth-scroll polyfill & active TOC ────── -->
+<script>
+(function () {
+  'use strict';
+  // Highlight current TOC link on scroll
+  var tocLinks = document.querySelectorAll('.toc a');
+  if (!tocLinks.length) return;
+  var targets = [];
+  tocLinks.forEach(function (a) {
+    var id = a.getAttribute('href');
+    if (id && id.charAt(0) === '#') {
+      var el = document.querySelector(id);
+      if (el) targets.push({ link: a, el: el });
+    }
+  });
+  function onScroll() {
+    var scrollY = window.scrollY || window.pageYOffset;
+    var current = null;
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i].el.offsetTop - 80 <= scrollY) current = targets[i].link;
+    }
+    tocLinks.forEach(function (a) { a.style.fontWeight = ''; a.style.color = ''; });
+    if (current) { current.style.fontWeight = '700'; current.style.color = '#79c0ff'; }
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+</script>
+</body>
+</html>
