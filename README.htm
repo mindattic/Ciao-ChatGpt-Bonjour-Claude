@@ -208,7 +208,7 @@
         <li><a href="#export-project">Project / Folder Detection</a></li>
         <li><a href="#export-format">Conversation Format</a></li>
         <li><a href="#export-dupes">Duplicate Filename Handling</a></li>
-        <li><a href="#export-deps">External Dependencies</a></li>
+        <li><a href="#export-zip">Built-in Zip Writer</a></li>
       </ul>
     </li>
     <li><a href="#step-2">Step 2 — Import into Claude</a>
@@ -263,7 +263,7 @@
 <div class="screenshot" aria-label="Exporter overlay screenshot">
   <span class="screenshot-label">UI Preview — Exporter (in-progress)</span>
   <div class="shot-inner">
-    <h2 class="exp-accent" style="font-size:1.35rem;">ChatGPT Exporter</h2>
+    <h2 class="exp-accent" style="font-size:1.35rem;">ChatGPT Conversation Exporter</h2>
     <div class="shot-subtitle">Exporting conversations — please keep this tab open</div>
     <div class="shot-counter">42 / 128 conversations</div>
     <div class="shot-bar-bg"><div class="shot-bar-fill exp-bar" style="width:33%;"></div></div>
@@ -296,11 +296,12 @@
 
 <h3 id="export-how">How It Works</h3>
 <ol>
+  <li><strong>URL Check</strong> — Verifies the script is running on <code>chatgpt.com</code>. If the hostname does not match, an alert is shown and the script exits immediately.</li>
   <li><strong>Authentication</strong> — Retrieves your session access token by calling <code>/api/auth/session</code>. The token is sent as a <code>Bearer</code> token in the <code>Authorization</code> header for all subsequent requests.</li>
   <li><strong>Discovery</strong> — Paginates through <code>/backend-api/conversations</code> (100 conversations per page, ordered by <code>updated</code>) to build a complete list of every conversation in your account.</li>
   <li><strong>Fetch</strong> — For each conversation, fetches the full message tree from <code>/backend-api/conversation/{id}</code>.</li>
   <li><strong>Extract</strong> — Walks the message tree using a depth-first traversal (iterative stack). Each node's <code>message.content.parts</code> array is joined into plain text. Messages are labelled by role (<code>You</code>, <code>ChatGPT</code>, <code>System</code>, <code>Tool</code>).</li>
-  <li><strong>Package</strong> — Writes each conversation as a <code>.txt</code> file inside a zip archive, organized into folders by project/workspace name.</li>
+  <li><strong>Package</strong> — Writes each conversation as a <code>.txt</code> file inside a zip archive using a built-in pure-JavaScript zip writer (STORE method, no compression). Files are organized into folders by project/workspace name.</li>
   <li><strong>Download</strong> — Generates the zip blob in-browser and triggers an automatic download.</li>
 </ol>
 
@@ -368,10 +369,18 @@ My Project/Some Title (1).txt
 My Project/Some Title (2).txt</code></pre>
 <p>File and folder names are sanitized: characters <code>&lt; &gt; : " / \ | ? *</code> are replaced with <code>_</code>, leading/trailing dots are stripped, and names are truncated to 100 characters.</p>
 
-<h3 id="export-deps">External Dependencies</h3>
-<ul>
-  <li><strong><a href="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js">JSZip 3.10.1</a></strong> — loaded dynamically from the cdnjs CDN at runtime to create the zip archive. No pre-installation required.</li>
-</ul>
+<h3 id="export-zip">Built-in Zip Writer</h3>
+<p>The exporter includes a minimal, dependency-free zip writer implemented in pure JavaScript. It builds a valid ZIP archive using the STORE method (no compression):</p>
+<ol>
+  <li>Encodes file content as UTF-8 and computes a <strong>CRC-32</strong> checksum for each entry.</li>
+  <li>Writes <strong>Local File Headers</strong> followed by raw file data.</li>
+  <li>Writes a <strong>Central Directory</strong> with one entry per file.</li>
+  <li>Writes an <strong>End of Central Directory</strong> (EOCD) record.</li>
+  <li>Returns the result as a <code>Blob</code> for immediate download.</li>
+</ol>
+<blockquote>
+  <p><strong>Note:</strong> No external libraries are loaded. This avoids Content Security Policy (CSP) issues on chatgpt.com that block third-party CDN scripts.</p>
+</blockquote>
 
 <hr>
 
@@ -396,7 +405,7 @@ My Project/Some Title (2).txt</code></pre>
 <div class="screenshot" aria-label="Importer overlay screenshot — file selection">
   <span class="screenshot-label">UI Preview — Importer (file select)</span>
   <div class="shot-inner">
-    <h2 class="imp-accent" style="font-size:1.35rem;">Claude Importer</h2>
+    <h2 class="imp-accent" style="font-size:1.35rem;">Claude Conversation Importer</h2>
     <div class="shot-subtitle">Import ChatGPT conversations into Claude Projects</div>
     <div class="imp-file-hint">
       Select your <code>chatgpt_export.zip</code> file.<br>
@@ -411,7 +420,7 @@ My Project/Some Title (2).txt</code></pre>
 <div class="screenshot" aria-label="Importer overlay screenshot — in-progress">
   <span class="screenshot-label">UI Preview — Importer (in-progress)</span>
   <div class="shot-inner">
-    <h2 class="imp-accent" style="font-size:1.35rem;">Claude Importer</h2>
+    <h2 class="imp-accent" style="font-size:1.35rem;">Claude Conversation Importer</h2>
     <div class="shot-subtitle">Import ChatGPT conversations into Claude Projects</div>
     <div class="shot-counter">18 / 126 files</div>
     <div class="shot-bar-bg"><div class="shot-bar-fill imp-bar" style="width:14%;"></div></div>
@@ -431,7 +440,7 @@ My Project/Some Title (2).txt</code></pre>
 <div class="screenshot" aria-label="Importer overlay screenshot — complete">
   <span class="screenshot-label">UI Preview — Importer (complete)</span>
   <div class="shot-inner">
-    <h2 class="imp-accent" style="font-size:1.35rem;">Claude Importer</h2>
+    <h2 class="imp-accent" style="font-size:1.35rem;">Claude Conversation Importer</h2>
     <div class="shot-subtitle">Import ChatGPT conversations into Claude Projects</div>
     <div class="shot-done-check">&#10003;</div>
     <div class="shot-done-title">Import Complete!</div>
@@ -455,6 +464,7 @@ My Project/Some Title (2).txt</code></pre>
 
 <h3 id="import-how">How It Works</h3>
 <ol>
+  <li><strong>URL Check</strong> — Verifies the script is running on <code>claude.ai</code>. If the hostname does not match, an alert is shown and the script exits immediately.</li>
   <li><strong>File Selection</strong> — Presents a styled file picker (<code>&lt;input type="file" accept=".zip"&gt;</code>). The user selects the export zip.</li>
   <li><strong>Parse</strong> — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). See <a href="#import-zip">Built-in Zip Reader</a>.</li>
   <li><strong>Group</strong> — Files are grouped by their top-level folder name. Each folder becomes a Claude Project. Files without a folder go into a <code>No Project</code> project.</li>
@@ -492,12 +502,13 @@ My Project/Some Title (2).txt</code></pre>
 <p>The importer includes a minimal, dependency-free zip reader implemented in pure JavaScript. It works by:</p>
 <ol>
   <li>Scanning backwards from the end of the <code>ArrayBuffer</code> to locate the <strong>End of Central Directory</strong> (EOCD) signature (<code>0x06054b50</code>).</li>
-  <li>Reading the <strong>Central Directory</strong> entries to discover each file's name, compressed size, and local header offset.</li>
+  <li>Reading the <strong>Central Directory</strong> entries to discover each file's name, compression method, compressed size, and local header offset.</li>
   <li>Parsing each <strong>Local File Header</strong> to calculate the exact data start position.</li>
-  <li>Extracting raw file bytes and decoding them as UTF-8 text.</li>
+  <li>Decompressing each entry: <strong>STORE</strong> (method 0) entries are used as-is; <strong>DEFLATE</strong> (method 8) entries are decompressed using the browser's built-in <code>DecompressionStream</code> API.</li>
+  <li>Decoding the resulting bytes as UTF-8 text.</li>
 </ol>
 <blockquote>
-  <p><strong>Note:</strong> This reader handles <strong>STORE</strong>-method (uncompressed) zip entries. The exporter's JSZip library should produce compatible output. Directories and zero-length entries are skipped.</p>
+  <p><strong>Note:</strong> The exporter generates STORE-method (uncompressed) zips for maximum compatibility. The importer also handles DEFLATE-compressed zips produced by other tools. Directories and zero-length entries are skipped.</p>
 </blockquote>
 
 <h3 id="import-dupes">Duplicate Project Handling</h3>
@@ -516,7 +527,7 @@ My Project/Some Title (2).txt</code></pre>
 <h2 id="privacy">Privacy &amp; Security</h2>
 <ul>
   <li><strong>No data leaves your browser</strong> — both scripts run entirely within your active browser session. Conversations are read from one service and written to another using the same browser that already has access.</li>
-  <li><strong>No third-party servers</strong> — the only external network request is loading JSZip from the cdnjs CDN (Step 1). The importer has zero external dependencies.</li>
+  <li><strong>No third-party servers</strong> — neither script loads external resources. Both operate entirely using built-in browser APIs.</li>
   <li><strong>No API keys</strong> — both scripts piggyback on the authentication tokens/cookies your browser already holds for chatgpt.com and claude.ai.</li>
   <li><strong>Credentials are never stored</strong> — access tokens are used in-memory for the duration of the script and discarded when the page is closed.</li>
 </ul>
@@ -531,7 +542,7 @@ My Project/Some Title (2).txt</code></pre>
 
 <h3>Exporter Overlay (<code>ChatGPTConversationExporter.js</code>)</h3>
 <ul>
-  <li><strong>Header</strong> — "ChatGPT Exporter" with a purple-to-green gradient.</li>
+  <li><strong>Header</strong> — "ChatGPT Conversation Exporter" with a purple-to-green gradient.</li>
   <li><strong>Progress bar</strong> — Animated fill from 0 % to 100 % as conversations are processed.</li>
   <li><strong>Counter</strong> — <code>{current} / {total} conversations</code>.</li>
   <li><strong>Status line</strong> — Current operation description.</li>
@@ -542,7 +553,7 @@ My Project/Some Title (2).txt</code></pre>
 
 <h3>Importer Overlay (<code>ClaudeConversationImporter.js</code>)</h3>
 <ul>
-  <li><strong>Header</strong> — "Claude Importer" with a warm brown/copper gradient.</li>
+  <li><strong>Header</strong> — "Claude Conversation Importer" with a warm brown/copper gradient.</li>
   <li><strong>File selection view</strong> — A styled button to trigger the file picker.</li>
   <li><strong>Progress view</strong> — Same layout as the exporter (counter, progress bar, status, log).</li>
   <li><strong>Completion view</strong> — Checkmark icon, summary statistics, per-project breakdown, and a <strong>Close</strong> button.</li>
@@ -559,12 +570,11 @@ My Project/Some Title (2).txt</code></pre>
   <tbody>
     <tr><td><strong>Rate limiting</strong></td><td>Both scripts use a fixed delay between API calls (<code>DELAY_MS</code>). If you hit rate limits, increase the value.</td></tr>
     <tr><td><strong>Conversation size</strong></td><td>Very large conversations may approach Claude's knowledge document size limits.</td></tr>
-    <tr><td><strong>Zip compression</strong></td><td>The importer's built-in zip reader expects uncompressed (STORE method) entries. If you modify the exporter's JSZip settings, ensure compression is set to <code>STORE</code>.</td></tr>
+    <tr><td><strong>Zip compression</strong></td><td>The exporter generates STORE (uncompressed) zips. The importer supports both STORE and DEFLATE. Other compression methods are not supported.</td></tr>
     <tr><td><strong>Browser tab</strong></td><td>The export/import tab must remain open and in the foreground for the full duration of the operation.</td></tr>
     <tr><td><strong>Session expiry</strong></td><td>Long-running exports (thousands of conversations) may encounter session token expiration. Re-run the script if this happens.</td></tr>
     <tr><td><strong>Custom GPTs</strong></td><td>Conversations with Custom GPTs are grouped by <code>gizmo_id</code>, which produces folder names like <code>Custom GPT (g-abc123…)</code> rather than the GPT's display name.</td></tr>
     <tr><td><strong>Message types</strong></td><td>Only text content is extracted. Images, file attachments, and DALL-E generations are not included.</td></tr>
-    <tr><td><strong>Content Security Policy</strong></td><td>Some browsers or browser extensions may block the dynamic loading of JSZip from the CDN. Disable restrictive extensions if the exporter fails to load.</td></tr>
   </tbody>
 </table>
 
@@ -577,12 +587,12 @@ My Project/Some Title (2).txt</code></pre>
 <table>
   <thead><tr><th>Problem</th><th>Solution</th></tr></thead>
   <tbody>
+    <tr><td><strong>"…must be run on chatgpt.com / claude.ai"</strong></td><td>You pasted the script on the wrong website. Navigate to the correct domain first. The exporter only runs on <code>chatgpt.com</code>; the importer only runs on <code>claude.ai</code>.</td></tr>
     <tr><td><strong>"No accessToken in session response"</strong></td><td>Your ChatGPT session may have expired. Refresh the page, ensure you are logged in, and try again.</td></tr>
     <tr><td><strong>"Not a valid zip file (no EOCD found)"</strong></td><td>The selected file is not a valid zip archive. Make sure you are selecting the <code>.zip</code> output from Step 1.</td></tr>
     <tr><td><strong>"Failed to fetch orgs"</strong></td><td>Your Claude session may have expired. Refresh claude.ai, log in, and re-run the importer.</td></tr>
     <tr><td><strong>HTTP 429 errors</strong></td><td>You are being rate-limited. Increase <code>DELAY_MS</code> (e.g., to <code>2000</code> or higher) and try again.</td></tr>
     <tr><td><strong>Script does nothing</strong></td><td>Check the browser console for errors. Some browsers require you to type <code>allow pasting</code> first before pasting scripts into the console.</td></tr>
-    <tr><td><strong>JSZip fails to load</strong></td><td>A browser extension (ad blocker, CSP enforcer) may be blocking the CDN request. Try disabling extensions or using an incognito window.</td></tr>
     <tr><td><strong>Missing conversations</strong></td><td>The exporter skips conversations with zero extractable text messages. Check the log panel for "No messages" warnings.</td></tr>
   </tbody>
 </table>

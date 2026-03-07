@@ -22,7 +22,7 @@ Both scripts work the same way: open **F12 → Console**, paste the script, hit 
   - [Project / Folder Detection](#project--folder-detection)
   - [Conversation Format](#conversation-format)
   - [Duplicate Filename Handling](#duplicate-filename-handling)
-  - [External Dependencies](#external-dependencies)
+  - [Built-in Zip Writer](#built-in-zip-writer)
 - [Step 2 — Import into Claude](#step-2--import-into-claude)
   - [Usage](#usage-1)
   - [How It Works](#how-it-works-1)
@@ -60,12 +60,13 @@ Both scripts work the same way: open **F12 → Console**, paste the script, hit 
 
 ### How It Works
 
-1. **Authentication** — Retrieves your session access token by calling `/api/auth/session`. The token is sent as a `Bearer` token in the `Authorization` header for all subsequent requests.
-2. **Discovery** — Paginates through `/backend-api/conversations` (100 conversations per page, ordered by `updated`) to build a complete list of every conversation in your account.
-3. **Fetch** — For each conversation, fetches the full message tree from `/backend-api/conversation/{id}`.
-4. **Extract** — Walks the message tree using a depth-first traversal (iterative stack). Each node's `message.content.parts` array is joined into plain text. Messages are labelled by role (`You`, `ChatGPT`, `System`, `Tool`).
-5. **Package** — Writes each conversation as a `.txt` file inside a zip archive, organized into folders by project/workspace name.
-6. **Download** — Generates the zip blob in-browser and triggers an automatic download.
+1. **URL Check** — Verifies the script is running on `chatgpt.com`. If the hostname does not match, an alert is shown and the script exits immediately.
+2. **Authentication** — Retrieves your session access token by calling `/api/auth/session`. The token is sent as a `Bearer` token in the `Authorization` header for all subsequent requests.
+3. **Discovery** — Paginates through `/backend-api/conversations` (100 conversations per page, ordered by `updated`) to build a complete list of every conversation in your account.
+4. **Fetch** — For each conversation, fetches the full message tree from `/backend-api/conversation/{id}`.
+5. **Extract** — Walks the message tree using a depth-first traversal (iterative stack). Each node's `message.content.parts` array is joined into plain text. Messages are labelled by role (`You`, `ChatGPT`, `System`, `Tool`).
+6. **Package** — Writes each conversation as a `.txt` file inside a zip archive using a built-in pure-JavaScript zip writer (STORE method, no compression). Files are organized into folders by project/workspace name.
+7. **Download** — Generates the zip blob in-browser and triggers an automatic download.
 
 ### ChatGPT API Endpoints Used
 
@@ -134,9 +135,17 @@ My Project/Some Title (2).txt
 
 File and folder names are sanitized: characters `< > : " / \ | ? *` are replaced with `_`, leading/trailing dots are stripped, and names are truncated to 100 characters.
 
-### External Dependencies
+### Built-in Zip Writer
 
-- **[JSZip 3.10.1](https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js)** — loaded dynamically from the cdnjs CDN at runtime to create the zip archive. No pre-installation required.
+The exporter includes a minimal, dependency-free zip writer implemented in pure JavaScript. It builds a valid ZIP archive using the STORE method (no compression):
+
+1. Encodes file content as UTF-8 and computes a **CRC-32** checksum for each entry.
+2. Writes **Local File Headers** followed by raw file data.
+3. Writes a **Central Directory** with one entry per file.
+4. Writes an **End of Central Directory** (EOCD) record.
+5. Returns the result as a `Blob` for immediate download.
+
+> **Note:** No external libraries are loaded. This avoids Content Security Policy (CSP) issues on chatgpt.com that block third-party CDN scripts.
 
 ---
 
@@ -155,14 +164,15 @@ File and folder names are sanitized: characters `< > : " / \ | ? *` are replaced
 
 ### How It Works
 
-1. **File Selection** — Presents a styled file picker (`<input type="file" accept=".zip">`). The user selects the export zip.
-2. **Parse** — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). See [Built-in Zip Reader](#built-in-zip-reader).
-3. **Group** — Files are grouped by their top-level folder name. Each folder becomes a Claude Project. Files without a folder go into a `No Project` project.
-4. **Organization** — Fetches the current Claude organization ID from `/api/organizations` (uses the first org returned).
-5. **Deduplication** — Lists existing Claude Projects and performs a case-insensitive name match. If a project with the same name already exists, it is reused instead of creating a duplicate.
-6. **Create Projects** — New projects are created via `POST /api/organizations/{orgId}/projects` with `is_private: true`.
-7. **Upload Documents** — Each conversation `.txt` is uploaded as a multipart form (`FormData`) to the project's docs endpoint.
-8. **Summary** — Displays a completion screen with counts of projects created, projects reused, documents uploaded, and errors.
+1. **URL Check** — Verifies the script is running on `claude.ai`. If the hostname does not match, an alert is shown and the script exits immediately.
+2. **File Selection** — Presents a styled file picker (`<input type="file" accept=".zip">`). The user selects the export zip.
+3. **Parse** — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). See [Built-in Zip Reader](#built-in-zip-reader).
+4. **Group** — Files are grouped by their top-level folder name. Each folder becomes a Claude Project. Files without a folder go into a `No Project` project.
+5. **Organization** — Fetches the current Claude organization ID from `/api/organizations` (uses the first org returned).
+6. **Deduplication** — Lists existing Claude Projects and performs a case-insensitive name match. If a project with the same name already exists, it is reused instead of creating a duplicate.
+7. **Create Projects** — New projects are created via `POST /api/organizations/{orgId}/projects` with `is_private: true`.
+8. **Upload Documents** — Each conversation `.txt` is uploaded as a multipart form (`FormData`) to the project's docs endpoint.
+9. **Summary** — Displays a completion screen with counts of projects created, projects reused, documents uploaded, and errors.
 
 > **Why does this work?** The script runs inside an active Claude session. The browser already holds your Claude session cookie and authorization token, so the script can call Claude's internal APIs on your behalf — no extra authentication needed.
 
@@ -186,11 +196,12 @@ File and folder names are sanitized: characters `< > : " / \ | ? *` are replaced
 The importer includes a minimal, dependency-free zip reader implemented in pure JavaScript. It works by:
 
 1. Scanning backwards from the end of the `ArrayBuffer` to locate the **End of Central Directory** (EOCD) signature (`0x06054b50`).
-2. Reading the **Central Directory** entries to discover each file's name, compressed size, and local header offset.
+2. Reading the **Central Directory** entries to discover each file's name, compression method, compressed size, and local header offset.
 3. Parsing each **Local File Header** to calculate the exact data start position.
-4. Extracting raw file bytes and decoding them as UTF-8 text.
+4. Decompressing each entry: **STORE** (method 0) entries are used as-is; **DEFLATE** (method 8) entries are decompressed using the browser's built-in `DecompressionStream` API.
+5. Decoding the resulting bytes as UTF-8 text.
 
-> **Note:** This reader handles **STORE**-method (uncompressed) zip entries. The exporter's JSZip library should produce compatible output. Directories and zero-length entries are skipped.
+> **Note:** The exporter generates STORE-method (uncompressed) zips for maximum compatibility. The importer also handles DEFLATE-compressed zips produced by other tools. Directories and zero-length entries are skipped.
 
 ### Duplicate Project Handling
 
@@ -205,7 +216,7 @@ Before creating any projects, the importer fetches the full list of existing Cla
 ## Privacy & Security
 
 - **No data leaves your browser** — both scripts run entirely within your active browser session. Conversations are read from one service and written to another using the same browser that already has access.
-- **No third-party servers** — the only external network request is loading JSZip from the cdnjs CDN (Step 1). The importer has zero external dependencies.
+- **No third-party servers** — neither script loads external resources. Both operate entirely using built-in browser APIs.
 - **No API keys** — both scripts piggyback on the authentication tokens/cookies your browser already holds for chatgpt.com and claude.ai.
 - **Credentials are never stored** — access tokens are used in-memory for the duration of the script and discarded when the page is closed.
 
@@ -217,7 +228,7 @@ Both scripts render a full-screen overlay with a dark theme (`rgba(0,0,0,0.85)` 
 
 ### Exporter Overlay (`ChatGPTConversationExporter.js`)
 
-- **Header** — "ChatGPT Exporter" with a purple-to-green gradient.
+- **Header** — "ChatGPT Conversation Exporter" with a purple-to-green gradient.
 - **Progress bar** — Animated fill from 0% to 100% as conversations are processed.
 - **Counter** — `{current} / {total} conversations`.
 - **Status line** — Current operation description.
@@ -227,7 +238,7 @@ Both scripts render a full-screen overlay with a dark theme (`rgba(0,0,0,0.85)` 
 
 ### Importer Overlay (`ClaudeConversationImporter.js`)
 
-- **Header** — "Claude Importer" with a warm brown/copper gradient.
+- **Header** — "Claude Conversation Importer" with a warm brown/copper gradient.
 - **File selection view** — A styled button to trigger the file picker.
 - **Progress view** — Same layout as the exporter (counter, progress bar, status, log).
 - **Completion view** — Checkmark icon, summary statistics, per-project breakdown, and a **Close** button.
@@ -240,12 +251,11 @@ Both scripts render a full-screen overlay with a dark theme (`rgba(0,0,0,0.85)` 
 |------|--------|
 | **Rate limiting** | Both scripts use a fixed delay between API calls (`DELAY_MS`). If you hit rate limits, increase the value. |
 | **Conversation size** | Very large conversations may approach Claude's knowledge document size limits. |
-| **Zip compression** | The importer's built-in zip reader expects uncompressed (STORE method) entries. If you modify the exporter's JSZip settings, ensure compression is set to `STORE`. |
+| **Zip compression** | The exporter generates STORE (uncompressed) zips. The importer supports both STORE and DEFLATE. Other compression methods are not supported. |
 | **Browser tab** | The export/import tab must remain open and in the foreground for the full duration of the operation. |
 | **Session expiry** | Long-running exports (thousands of conversations) may encounter session token expiration. Re-run the script if this happens. |
 | **Custom GPTs** | Conversations with Custom GPTs are grouped by `gizmo_id`, which produces folder names like `Custom GPT (g-abc123...)` rather than the GPT's display name. |
 | **Message types** | Only text content is extracted. Images, file attachments, and DALL-E generations are not included. |
-| **Content Security Policy** | Some browsers or browser extensions may block the dynamic loading of JSZip from the CDN. Disable restrictive extensions if the exporter fails to load. |
 
 ---
 
@@ -253,12 +263,12 @@ Both scripts render a full-screen overlay with a dark theme (`rgba(0,0,0,0.85)` 
 
 | Problem | Solution |
 |---------|----------|
+| **"…must be run on chatgpt.com / claude.ai"** | You pasted the script on the wrong website. Navigate to the correct domain first. The exporter only runs on `chatgpt.com`; the importer only runs on `claude.ai`. |
 | **"No accessToken in session response"** | Your ChatGPT session may have expired. Refresh the page, ensure you are logged in, and try again. |
 | **"Not a valid zip file (no EOCD found)"** | The selected file is not a valid zip archive. Make sure you are selecting the `.zip` output from Step 1. |
 | **"Failed to fetch orgs"** | Your Claude session may have expired. Refresh claude.ai, log in, and re-run the importer. |
 | **HTTP 429 errors** | You are being rate-limited. Increase `DELAY_MS` (e.g., to `2000` or higher) and try again. |
 | **Script does nothing** | Check the browser console for errors. Some browsers require you to type `allow pasting` first before pasting scripts into the console. |
-| **JSZip fails to load** | A browser extension (ad blocker, CSP enforcer) may be blocking the CDN request. Try disabling extensions or using an incognito window. |
 | **Missing conversations** | The exporter skips conversations with zero extractable text messages. Check the log panel for "No messages" warnings. |
 
 ---

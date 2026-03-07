@@ -15,7 +15,13 @@
 (async function () {
   'use strict';
 
-  const DELAY_MS = 800;
+  // ─── URL CHECK ─────────────────────────────────────────────
+  if (!location.hostname.endsWith('claude.ai')) {
+    alert('Claude Importer must be run on claude.ai.\nPlease navigate to https://claude.ai and try again.');
+    return;
+  }
+
+  const DELAY_MS = 250;
 
   // ─── UI OVERLAY ───────────────────────────────────────────
   const overlay = document.createElement('div');
@@ -90,7 +96,7 @@
       .imp-proj-item span { color: #d4a574; font-weight: 600; }
     </style>
     <div id="claude-imp-box">
-      <h2>Claude Importer</h2>
+      <h2>Claude Conversation Importer</h2>
       <div class="imp-subtitle">Import ChatGPT conversations into Claude Projects</div>
 
       <!-- File Select -->
@@ -168,6 +174,7 @@
     for (let i = 0; i < cdEntries; i++) {
       if (view.getUint32(pos, true) !== 0x02014b50) break;
 
+      const compressionMethod = view.getUint16(pos + 10, true);
       const nameLen = view.getUint16(pos + 28, true);
       const extraLen = view.getUint16(pos + 30, true);
       const commentLen = view.getUint16(pos + 32, true);
@@ -185,13 +192,37 @@
       // Skip directories
       if (!name.endsWith('/') && compSize > 0) {
         const data = bytes.slice(dataStart, dataStart + compSize);
-        files.push({ name, data });
+        files.push({ name, data, compressionMethod });
       }
 
       pos += 46 + nameLen + extraLen + commentLen;
     }
 
     return files;
+  }
+
+  // Decompress a zip entry: STORE (0) returns raw data, DEFLATE (8) uses DecompressionStream
+  async function decompressEntry(entry) {
+    if (entry.compressionMethod === 0) return entry.data;
+    if (entry.compressionMethod === 8) {
+      const ds = new DecompressionStream('deflate-raw');
+      const writer = ds.writable.getWriter();
+      writer.write(entry.data);
+      writer.close();
+      const reader = ds.readable.getReader();
+      const chunks = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      const totalLen = chunks.reduce((sum, c) => sum + c.length, 0);
+      const result = new Uint8Array(totalLen);
+      let off = 0;
+      for (const chunk of chunks) { result.set(chunk, off); off += chunk.length; }
+      return result;
+    }
+    throw new Error(`Unsupported compression method ${entry.compressionMethod} for ${entry.name}`);
   }
 
   // ─── CLAUDE API HELPERS ───────────────────────────────────
@@ -283,9 +314,17 @@
 
     logMsg(`Found ${zipFiles.length} files in zip`, 'imp-ok');
 
-    // Step 2: Group files by project (top-level folder)
+    // Step 2: Decompress and group files by project (top-level folder)
+    ui.status.textContent = 'Decompressing files...';
     const projectMap = {};  // projectName -> [{fileName, content}]
     for (const zf of zipFiles) {
+      let decompressed;
+      try {
+        decompressed = await decompressEntry(zf);
+      } catch (err) {
+        logMsg(`Skipping ${zf.name}: ${err.message}`, 'imp-err');
+        continue;
+      }
       const parts = zf.name.split('/');
       let project, fileName;
       if (parts.length >= 2) {
@@ -296,7 +335,7 @@
         fileName = parts[0];
       }
       if (!projectMap[project]) projectMap[project] = [];
-      const content = new TextDecoder().decode(zf.data);
+      const content = new TextDecoder().decode(decompressed);
       projectMap[project].push({ fileName, content });
     }
 

@@ -11,8 +11,14 @@
 (async function() {
   'use strict';
 
+  // ─── URL CHECK ─────────────────────────────────────────────
+  if (!location.hostname.endsWith('chatgpt.com')) {
+    alert('ChatGPT Exporter must be run on chatgpt.com.\nPlease navigate to https://chatgpt.com and try again.');
+    return;
+  }
+
   // ─── CONFIG ───────────────────────────────────────────────
-  const DELAY_MS = 1200;          // ms between API calls (be nice to the server)
+  const DELAY_MS = 250;          // ms between API calls (be nice to the server)
   const BASE = '/backend-api';
 
   // ─── UI OVERLAY ───────────────────────────────────────────
@@ -63,7 +69,7 @@
       .cgpt-exp-err { color: #f87171; }
     </style>
     <div id="cgpt-exporter-box">
-      <h2>ChatGPT Exporter</h2>
+      <h2>ChatGPT Conversation Exporter</h2>
       <div class="subtitle">Exporting conversations — please keep this tab open</div>
       <div id="cgpt-exp-counter">Preparing...</div>
       <div id="cgpt-exp-progress-bg"><div id="cgpt-exp-progress-fill"></div></div>
@@ -142,8 +148,7 @@
       if (items.length === 0) break;
 
       allConvs = allConvs.concat(items);
-      const total = data.total || '?';
-      ui.status.textContent = `Discovered ${allConvs.length} / ${total} conversations...`;
+      ui.status.textContent = `Discovered ${allConvs.length} conversations...`;
 
       if (allConvs.length >= (data.total || Infinity)) break;
       offset += limit;
@@ -164,18 +169,92 @@
   ui.counter.textContent = `0 / ${total} conversations`;
   ui.status.textContent = `Found ${total} conversations. Starting export...`;
 
-  // ─── LOAD JSZip ───────────────────────────────────────────
-  // Dynamically load JSZip for creating the zip file
-  ui.status.textContent = 'Loading zip library...';
-  await new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-    script.onload = resolve;
-    script.onerror = () => reject(new Error('Failed to load JSZip'));
-    document.head.appendChild(script);
-  });
+  // ─── NATIVE ZIP WRITER (pure JS, no deps) ─────────────────
+  const ZipWriter = (() => {
+    // CRC-32 lookup table
+    const crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      crcTable[n] = c;
+    }
+    function crc32(bytes) {
+      let crc = 0xFFFFFFFF;
+      for (let i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+    function utf8(str) { return new TextEncoder().encode(str); }
+    function u16(v) { return [v & 0xFF, (v >> 8) & 0xFF]; }
+    function u32(v) { return [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF]; }
 
-  const zip = new JSZip();
+    class Writer {
+      constructor() { this._files = []; }
+      file(name, content) {
+        const data = (typeof content === 'string') ? utf8(content) : new Uint8Array(content);
+        this._files.push({ name: utf8(name), data, crc: crc32(data) });
+      }
+      generate() {
+        const parts = [];       // local file headers + data
+        const central = [];     // central directory entries
+        let offset = 0;
+        for (const f of this._files) {
+          // Local file header
+          const local = new Uint8Array([
+            0x50,0x4B,0x03,0x04,  // signature
+            0x14,0x00,            // version needed (2.0)
+            0x00,0x00,            // flags
+            0x00,0x00,            // compression (STORE)
+            0x00,0x00,0x00,0x00,  // mod time + date
+            ...u32(f.crc),
+            ...u32(f.data.length),
+            ...u32(f.data.length),
+            ...u16(f.name.length),
+            0x00,0x00,            // extra length
+          ]);
+          parts.push(local, f.name, f.data);
+
+          // Central directory entry
+          const cd = new Uint8Array([
+            0x50,0x4B,0x01,0x02,  // signature
+            0x14,0x00,            // version made by
+            0x14,0x00,            // version needed
+            0x00,0x00,            // flags
+            0x00,0x00,            // compression (STORE)
+            0x00,0x00,0x00,0x00,  // mod time + date
+            ...u32(f.crc),
+            ...u32(f.data.length),
+            ...u32(f.data.length),
+            ...u16(f.name.length),
+            0x00,0x00,            // extra length
+            0x00,0x00,            // comment length
+            0x00,0x00,            // disk number
+            0x00,0x00,            // internal attrs
+            0x00,0x00,0x00,0x00,  // external attrs
+            ...u32(offset),
+          ]);
+          central.push(cd, f.name);
+
+          offset += local.length + f.name.length + f.data.length;
+        }
+        const cdOffset = offset;
+        const cdSize = central.reduce((s, c) => s + c.length, 0);
+        // End of Central Directory
+        const eocd = new Uint8Array([
+          0x50,0x4B,0x05,0x06,
+          0x00,0x00, 0x00,0x00,
+          ...u16(this._files.length),
+          ...u16(this._files.length),
+          ...u32(cdSize),
+          ...u32(cdOffset),
+          0x00,0x00,
+        ]);
+        return new Blob([...parts, ...central, eocd], { type: 'application/zip' });
+      }
+    }
+    return Writer;
+  })();
+
+  const zip = new ZipWriter();
 
   // ─── HELPERS ──────────────────────────────────────────────
   function getProject(conv) {
@@ -303,9 +382,7 @@
   ui.status.textContent = 'Generating zip file...';
   ui.bar.style.width = '100%';
 
-  const blob = await zip.generateAsync({ type: 'blob' }, (meta) => {
-    ui.status.textContent = `Compressing... ${Math.round(meta.percent)}%`;
-  });
+  const blob = zip.generate();
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
