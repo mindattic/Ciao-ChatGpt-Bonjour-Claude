@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -399,9 +399,10 @@ My Project/Some Title (2).txt</code></pre>
   <li>Copy the entire contents of <strong><code>ClaudeConversationImporter.js</code></strong>.</li>
   <li><strong>Paste</strong> it into the console and press <strong>Enter</strong>.</li>
   <li>An overlay will appear. Click <strong>Minimize &amp; Capture</strong>, then <strong>send any message</strong> in Claude's chat. This lets the script capture your session's auth headers.</li>
-  <li>The overlay reappears with a file picker — select your <code>chatgpt_export_YYYY-MM-DD.zip</code> file from Step 1.</li>
+  <li>The overlay reappears with a file picker and an <strong>Organize into Projects</strong> checkbox (checked by default). Uncheck it to import all conversations flat into the root without creating any projects.</li>
+  <li>Select your <code>chatgpt_export_YYYY-MM-DD.zip</code> file from Step 1.</li>
   <li>If you belong to multiple Claude organizations (e.g., Free + Team), a picker appears — <strong>choose your org</strong>.</li>
-  <li>The script automatically creates one Claude Project per export folder and imports each conversation as a new Claude chat. If there aren’t enough project slots, smaller folders are merged into a single <em>Miscellaneous</em> project.</li>
+  <li>The script imports conversations. In <strong>project mode</strong> it creates one Claude Project per export folder (merging small folders into <em>Miscellaneous</em> when slots are limited). In <strong>root mode</strong> it imports every conversation without any project structure.</li>
   <li>When finished, a summary screen shows projects created, conversations imported, and errors. Click <strong>Close</strong> to dismiss.</li>
 </ol>
 
@@ -470,14 +471,14 @@ My Project/Some Title (2).txt</code></pre>
 <ol>
   <li><strong>URL Check</strong> — Verifies the script is running on <code>claude.ai</code>. If the hostname does not match, an alert is shown and the script exits immediately.</li>
   <li><strong>Auth Capture</strong> — The overlay minimizes and the script intercepts <code>window.fetch</code> to capture auth headers and the active model name from the next Claude API call the user triggers (e.g., sending a message). These headers are replayed via un-patched native <code>fetch</code> (obtained from a hidden iframe) for all subsequent API calls.</li>
-  <li><strong>File Selection</strong> — Presents a styled file picker (<code>&lt;input type="file" accept=".zip"&gt;</code>). The user selects the export zip.</li>
+  <li><strong>File Selection &amp; Mode</strong> — Presents a styled file picker (<code>&lt;input type="file" accept=".zip"&gt;</code>) and an <strong>Organize into Projects</strong> checkbox. When checked (default), conversations are organized into Claude Projects matching the export folders. When unchecked, all conversations are imported to the root without creating any projects.</li>
   <li><strong>Parse &amp; Group</strong> — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). Files are grouped by their top-level folder (matching the ChatGPT project/workspace they came from). See <a href="#import-zip">Built-in Zip Reader</a>.</li>
   <li><strong>Organization Picker</strong> — Fetches all Claude organizations from <code>/api/organizations</code>. If you belong to multiple orgs (e.g., personal Free plan + a Team workspace), a picker lets you choose which one. Single-org accounts skip this step.</li>
-  <li><strong>Slot Planning</strong> — Lists existing Claude Projects to determine how many of the 10 project slots are available. If a folder name matches an existing project (case-insensitive), that project is reused.</li>
-  <li><strong>Smart Merging</strong> — If there are more new folders than available slots, the largest folders get their own projects and the smallest are merged into a single <em>Miscellaneous</em> project with bracket-prefixed filenames.</li>
-  <li><strong>Create Projects</strong> — New projects are created via <code>POST /api/organizations/{orgId}/projects</code> with <code>is_private: true</code>.</li>
-  <li><strong>Create Conversations</strong> — For each <code>.txt</code> file, a new chat conversation is created via <code>POST /api/organizations/{orgId}/chat_conversations</code> with the conversation title and <code>project_uuid</code>. The conversation content is then sent as the first message via the streaming completion endpoint, and the response is drained so the server commits the conversation.</li>
-  <li><strong>Summary</strong> — Displays a completion screen with counts of projects created, projects reused, conversations imported, and errors.</li>
+  <li><strong>Slot Planning</strong> <em>(project mode only)</em> — Lists existing Claude Projects to determine how many of the 10 project slots are available. If a folder name matches an existing project (case-insensitive), that project is reused.</li>
+  <li><strong>Smart Merging</strong> <em>(project mode only)</em> — If there are more new folders than available slots, the largest folders get their own projects and the smallest are merged into a single <em>Miscellaneous</em> project with bracket-prefixed filenames.</li>
+  <li><strong>Create Projects</strong> <em>(project mode only)</em> — New projects are created via <code>POST /api/organizations/{orgId}/projects</code> with <code>is_private: true</code>.</li>
+  <li><strong>Create Conversations</strong> — For each <code>.txt</code> file, a new chat conversation is created via <code>POST /api/organizations/{orgId}/chat_conversations</code> with the conversation title and optionally a <code>project_uuid</code>. The conversation content is then sent as the first message via the streaming completion endpoint, and the response is drained so the server commits the conversation.</li>
+  <li><strong>Summary</strong> — Displays a completion screen with counts of projects created (if applicable), conversations imported, and errors.</li>
 </ol>
 
 <blockquote>

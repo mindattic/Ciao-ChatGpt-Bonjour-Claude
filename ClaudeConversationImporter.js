@@ -95,6 +95,23 @@
       }
       .imp-proj-item { padding: 0.3rem 0; color: #a0a0b0; }
       .imp-proj-item span { color: #6c63ff; font-weight: 600; }
+      .imp-toggle {
+        display: flex; align-items: flex-start; gap: 0.6rem;
+        text-align: left; margin: 1.2rem 0 0.2rem 0; padding: 0.8rem 1rem;
+        background: #0e0e10; border-radius: 8px; border: 1px solid #2a2a4a;
+        cursor: pointer; transition: border-color 0.2s;
+      }
+      .imp-toggle:hover { border-color: #6c63ff; }
+      .imp-toggle input[type="checkbox"] {
+        margin-top: 0.2rem; accent-color: #6c63ff; width: 16px; height: 16px;
+        flex-shrink: 0; cursor: pointer;
+      }
+      .imp-toggle-label {
+        font-size: 0.85rem; color: #e0e0e0; font-weight: 600; line-height: 1.4;
+      }
+      .imp-toggle-hint {
+        font-size: 0.75rem; color: #888; margin-top: 0.15rem; line-height: 1.4;
+      }
     </style>
     <div id="claude-imp-box">
       <h2>Claude Conversation Importer</h2>
@@ -119,6 +136,16 @@
         </p>
         <input type="file" id="imp-file-input" accept=".zip" />
         <button class="imp-btn" id="imp-select-btn">Select Zip File</button>
+        <label class="imp-toggle">
+          <input type="checkbox" id="imp-use-projects" checked />
+          <div>
+            <div class="imp-toggle-label">Organize into Projects</div>
+            <div class="imp-toggle-hint">
+              Each folder becomes a Claude Project (limit 5 Free / 10 Team).<br>
+              Uncheck to import all conversations to the root without projects.
+            </div>
+          </div>
+        </label>
       </div>
 
       <!-- Picker (reused for org + project selection) -->
@@ -454,11 +481,13 @@
     const file = e.target.files[0];
     if (!file) return;
 
+    const useProjects = document.getElementById('imp-use-projects').checked;
+
     ui.select.style.display = 'none';
     ui.progress.style.display = 'block';
 
     try {
-      await runImport(file);
+      await runImport(file, useProjects);
     } catch (err) {
       ui.status.textContent = 'Fatal error: ' + err.message;
       logMsg('Fatal: ' + err.message, 'imp-err');
@@ -467,7 +496,7 @@
   });
 
   // ─── MAIN IMPORT LOGIC ───────────────────────────────────
-  async function runImport(file) {
+  async function runImport(file, useProjects) {
     // Log captured headers for diagnostics
     const hdrKeys = Object.keys(_capturedHeaders);
     logMsg(`Captured ${hdrKeys.length} auth headers: ${hdrKeys.join(', ')}`, hdrKeys.length > 0 ? 'imp-ok' : 'imp-err');
@@ -546,79 +575,9 @@
     }
     const orgId = chosenOrg.uuid;
     logMsg(`Organization: ${chosenOrg.name} (${orgId.slice(0, 8)}...)`, 'imp-ok');
+    logMsg(`Mode: ${useProjects ? 'Organize into Projects' : 'Import to root (no projects)'}`, 'imp-ok');
 
-    // Step 4: Check existing projects to know available slots
-    ui.status.textContent = 'Checking existing projects...';
-    let existingProjects = [];
-    try {
-      existingProjects = await listProjects(orgId);
-    } catch (err) {
-      logMsg('Warning: Could not list existing projects: ' + err.message, 'imp-warn');
-    }
-    const existingNames = new Map();
-    for (const p of existingProjects) {
-      existingNames.set(p.name.toLowerCase(), p.uuid);
-    }
-    const MAX_PROJECTS = 10;
-    const usedSlots = existingProjects.length;
-    const availableSlots = Math.max(0, MAX_PROJECTS - usedSlots);
-    logMsg(`${usedSlots} existing projects, ${availableSlots} slots available (max ${MAX_PROJECTS})`, availableSlots > 0 ? 'imp-ok' : 'imp-warn');
-
-    // Step 5: Build project assignments — map each folder to a project name
-    // Reuse existing projects by name match; create new ones for the rest.
-    // If more folders than available slots, merge the smallest into "ChatGPT Import (Misc)".
-    const assignments = {};  // projectName -> [{fileName, content}]
-    const foldersNeedingNewProject = [];
-
-    for (const folder of folderNames) {
-      const existingId = existingNames.get(folder.toLowerCase());
-      if (existingId) {
-        // Reuse existing project
-        assignments[folder] = { files: folderMap[folder], id: existingId, reused: true };
-        logMsg(`Will reuse existing project: ${folder}`, 'imp-warn');
-      } else {
-        foldersNeedingNewProject.push(folder);
-      }
-    }
-
-    // Sort folders needing new projects by file count (largest first)
-    foldersNeedingNewProject.sort((a, b) => folderMap[b].length - folderMap[a].length);
-
-    if (foldersNeedingNewProject.length <= availableSlots) {
-      // Enough slots — one project per folder
-      for (const folder of foldersNeedingNewProject) {
-        assignments[folder] = { files: folderMap[folder], id: null, reused: false };
-      }
-    } else {
-      // Not enough slots — keep the largest folders as their own projects,
-      // merge the rest into a single "ChatGPT Import (Misc)" project
-      const keepCount = Math.max(0, availableSlots - 1); // reserve 1 slot for Misc
-      const keepFolders = foldersNeedingNewProject.slice(0, keepCount);
-      const mergeFolders = foldersNeedingNewProject.slice(keepCount);
-
-      for (const folder of keepFolders) {
-        assignments[folder] = { files: folderMap[folder], id: null, reused: false };
-      }
-
-      // Merge remaining folders — prefix filenames with folder name
-      const miscFiles = [];
-      for (const folder of mergeFolders) {
-        for (const f of folderMap[folder]) {
-          miscFiles.push({ fileName: `[${folder}] ${f.fileName}`, content: f.content });
-        }
-      }
-      if (miscFiles.length > 0) {
-        const miscName = 'Miscellaneous';
-        const existingMiscId = existingNames.get(miscName.toLowerCase());
-        assignments[miscName] = { files: miscFiles, id: existingMiscId || null, reused: !!existingMiscId };
-        logMsg(`Merging ${mergeFolders.length} folders into "${miscName}" (${miscFiles.length} files)`, 'imp-warn');
-      }
-    }
-
-    const projectNames = Object.keys(assignments);
-    logMsg(`Plan: ${projectNames.length} projects (${projectNames.filter(n => !assignments[n].reused).length} new, ${projectNames.filter(n => assignments[n].reused).length} reused)`, 'imp-ok');
-
-    // Step 6: Create projects and upload files
+    // Step 4+: Branch based on project mode
     let projectsCreated = 0;
     let projectsReused = 0;
     let filesUploaded = 0;
@@ -626,52 +585,150 @@
     let fileIndex = 0;
     const projectResults = {};
 
-    for (const projectName of projectNames) {
-      const assignment = assignments[projectName];
-      let projectId = assignment.id;
-
-      if (assignment.reused) {
-        projectsReused++;
-      } else {
-        // Create the project
-        try {
-          ui.status.textContent = `Creating project: ${projectName}...`;
-          const proj = await createProject(orgId, projectName);
-          projectId = proj.uuid;
-          projectsCreated++;
-          logMsg(`Created project: ${projectName}`, 'imp-ok');
-          await sleep(DELAY_MS);
-        } catch (err) {
-          logMsg(`Failed to create project "${projectName}": ${err.message}`, 'imp-err');
-          fileErrors += assignment.files.length;
-          fileIndex += assignment.files.length;
-          continue;
+    if (!useProjects) {
+      // ── FLAT MODE — import all conversations to the org root ──
+      const allFiles = [];
+      for (const folder of folderNames) {
+        for (const f of folderMap[folder]) {
+          allFiles.push(f);
         }
       }
 
-      projectResults[projectName] = { total: assignment.files.length, uploaded: 0 };
+      const groupName = '(root)';
+      projectResults[groupName] = { total: allFiles.length, uploaded: 0 };
 
-      // Create a conversation for each file
-      for (const f of assignment.files) {
+      for (const f of allFiles) {
         fileIndex++;
         const pct = Math.round((fileIndex / totalFiles) * 100);
         ui.bar.style.width = pct + '%';
         ui.counter.textContent = `${fileIndex} / ${totalFiles} conversations`;
-        ui.current.textContent = `${projectName} / ${f.fileName}`;
-        ui.status.textContent = `Creating conversation in ${projectName}...`;
+        ui.current.textContent = f.fileName;
+        ui.status.textContent = 'Creating conversation...';
 
         try {
           const title = f.fileName.replace(/\.txt$/i, '');
-          const convId = await createConversation(orgId, title, projectId);
+          const convId = await createConversation(orgId, title, null);
           await sendMessage(orgId, convId, f.content);
           filesUploaded++;
-          projectResults[projectName].uploaded++;
+          projectResults[groupName].uploaded++;
         } catch (err) {
           fileErrors++;
           logMsg(`Error: ${f.fileName} — ${err.message}`, 'imp-err');
         }
 
         await sleep(DELAY_MS);
+      }
+    } else {
+      // ── PROJECT MODE — organize into Claude Projects ──────────
+      // Step 4: Check existing projects to know available slots
+      ui.status.textContent = 'Checking existing projects...';
+      let existingProjects = [];
+      try {
+        existingProjects = await listProjects(orgId);
+      } catch (err) {
+        logMsg('Warning: Could not list existing projects: ' + err.message, 'imp-warn');
+      }
+      const existingNames = new Map();
+      for (const p of existingProjects) {
+        existingNames.set(p.name.toLowerCase(), p.uuid);
+      }
+      const MAX_PROJECTS = 10;
+      const usedSlots = existingProjects.length;
+      const availableSlots = Math.max(0, MAX_PROJECTS - usedSlots);
+      logMsg(`${usedSlots} existing projects, ${availableSlots} slots available (max ${MAX_PROJECTS})`, availableSlots > 0 ? 'imp-ok' : 'imp-warn');
+
+      // Step 5: Build project assignments
+      const assignments = {};
+      const foldersNeedingNewProject = [];
+
+      for (const folder of folderNames) {
+        const existingId = existingNames.get(folder.toLowerCase());
+        if (existingId) {
+          assignments[folder] = { files: folderMap[folder], id: existingId, reused: true };
+          logMsg(`Will reuse existing project: ${folder}`, 'imp-warn');
+        } else {
+          foldersNeedingNewProject.push(folder);
+        }
+      }
+
+      foldersNeedingNewProject.sort((a, b) => folderMap[b].length - folderMap[a].length);
+
+      if (foldersNeedingNewProject.length <= availableSlots) {
+        for (const folder of foldersNeedingNewProject) {
+          assignments[folder] = { files: folderMap[folder], id: null, reused: false };
+        }
+      } else {
+        const keepCount = Math.max(0, availableSlots - 1);
+        const keepFolders = foldersNeedingNewProject.slice(0, keepCount);
+        const mergeFolders = foldersNeedingNewProject.slice(keepCount);
+
+        for (const folder of keepFolders) {
+          assignments[folder] = { files: folderMap[folder], id: null, reused: false };
+        }
+
+        const miscFiles = [];
+        for (const folder of mergeFolders) {
+          for (const f of folderMap[folder]) {
+            miscFiles.push({ fileName: `[${folder}] ${f.fileName}`, content: f.content });
+          }
+        }
+        if (miscFiles.length > 0) {
+          const miscName = 'Miscellaneous';
+          const existingMiscId = existingNames.get(miscName.toLowerCase());
+          assignments[miscName] = { files: miscFiles, id: existingMiscId || null, reused: !!existingMiscId };
+          logMsg(`Merging ${mergeFolders.length} folders into "${miscName}" (${miscFiles.length} files)`, 'imp-warn');
+        }
+      }
+
+      const projectNames = Object.keys(assignments);
+      logMsg(`Plan: ${projectNames.length} projects (${projectNames.filter(n => !assignments[n].reused).length} new, ${projectNames.filter(n => assignments[n].reused).length} reused)`, 'imp-ok');
+
+      // Step 6: Create projects and conversations
+      for (const projectName of projectNames) {
+        const assignment = assignments[projectName];
+        let projectId = assignment.id;
+
+        if (assignment.reused) {
+          projectsReused++;
+        } else {
+          try {
+            ui.status.textContent = `Creating project: ${projectName}...`;
+            const proj = await createProject(orgId, projectName);
+            projectId = proj.uuid;
+            projectsCreated++;
+            logMsg(`Created project: ${projectName}`, 'imp-ok');
+            await sleep(DELAY_MS);
+          } catch (err) {
+            logMsg(`Failed to create project "${projectName}": ${err.message}`, 'imp-err');
+            fileErrors += assignment.files.length;
+            fileIndex += assignment.files.length;
+            continue;
+          }
+        }
+
+        projectResults[projectName] = { total: assignment.files.length, uploaded: 0 };
+
+        for (const f of assignment.files) {
+          fileIndex++;
+          const pct = Math.round((fileIndex / totalFiles) * 100);
+          ui.bar.style.width = pct + '%';
+          ui.counter.textContent = `${fileIndex} / ${totalFiles} conversations`;
+          ui.current.textContent = `${projectName} / ${f.fileName}`;
+          ui.status.textContent = `Creating conversation in ${projectName}...`;
+
+          try {
+            const title = f.fileName.replace(/\.txt$/i, '');
+            const convId = await createConversation(orgId, title, projectId);
+            await sendMessage(orgId, convId, f.content);
+            filesUploaded++;
+            projectResults[projectName].uploaded++;
+          } catch (err) {
+            fileErrors++;
+            logMsg(`Error: ${f.fileName} — ${err.message}`, 'imp-err');
+          }
+
+          await sleep(DELAY_MS);
+        }
       }
     }
 
@@ -681,17 +738,21 @@
 
     const summary = document.getElementById('imp-summary');
     summary.innerHTML = `
-      <strong>${projectsCreated}</strong> projects created
-      ${projectsReused > 0 ? `<br><span style="color:#fbbf24">${projectsReused} projects reused</span>` : ''}
-      <br><strong>${filesUploaded}</strong> conversations uploaded
+      ${projectsCreated > 0 ? `<strong>${projectsCreated}</strong> projects created<br>` : ''}
+      ${projectsReused > 0 ? `<span style="color:#fbbf24">${projectsReused} projects reused</span><br>` : ''}
+      <strong>${filesUploaded}</strong> conversations imported
       ${fileErrors > 0 ? `<br><span style="color:#f87171">${fileErrors} errors</span>` : ''}
     `;
 
     const projList = document.getElementById('imp-projects-list');
-    projList.style.display = '';
-    projList.innerHTML = '<div style="font-weight:600;margin-bottom:0.5rem;color:#e0e0e0">Projects</div>';
-    for (const [name, result] of Object.entries(projectResults).sort((a, b) => a[0].localeCompare(b[0]))) {
-      projList.innerHTML += `<div class="imp-proj-item"><span>${result.uploaded}</span> / ${result.total} — ${name}</div>`;
+    if (Object.keys(projectResults).length > 0 && useProjects) {
+      projList.style.display = '';
+      projList.innerHTML = '<div style="font-weight:600;margin-bottom:0.5rem;color:#e0e0e0">Projects</div>';
+      for (const [name, result] of Object.entries(projectResults).sort((a, b) => a[0].localeCompare(b[0]))) {
+        projList.innerHTML += `<div class="imp-proj-item"><span>${result.uploaded}</span> / ${result.total} — ${name}</div>`;
+      }
+    } else {
+      projList.style.display = 'none';
     }
 
     console.log(`✅ Claude Import complete: ${projectsCreated} projects created, ${projectsReused} reused, ${filesUploaded} conversations created, ${fileErrors} errors`);
