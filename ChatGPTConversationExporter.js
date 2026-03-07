@@ -384,6 +384,30 @@
 
   const blob = zip.generate();
 
+  // Verify the zip is readable before downloading
+  ui.status.textContent = 'Verifying zip integrity...';
+  try {
+    const buf = await blob.arrayBuffer();
+    const view = new DataView(buf);
+    const bytes = new Uint8Array(buf);
+    // Find EOCD
+    let eocd = -1;
+    for (let i = bytes.length - 22; i >= 0; i--) {
+      if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd === -1) throw new Error('EOCD not found');
+    const entries = view.getUint16(eocd + 10, true);
+    if (entries !== success) throw new Error(`Expected ${success} entries, found ${entries}`);
+    // Spot-check first entry is STORE and readable as text
+    const cdOff = view.getUint32(eocd + 16, true);
+    if (view.getUint32(cdOff, true) !== 0x02014b50) throw new Error('Bad CD signature');
+    const method = view.getUint16(cdOff + 10, true);
+    if (method !== 0) throw new Error(`Expected STORE (0), got compression method ${method}`);
+    logMsg(`Zip verified: ${entries} files, STORE method`, '');
+  } catch (e) {
+    logMsg(`Zip verify warning: ${e.message}`, 'cgpt-exp-warn');
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
