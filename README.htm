@@ -396,9 +396,12 @@ My Project/Some Title (2).txt</code></pre>
   <li>Click the <strong>Console</strong> tab.</li>
   <li>Copy the entire contents of <strong><code>ClaudeConversationImporter.js</code></strong>.</li>
   <li><strong>Paste</strong> it into the console and press <strong>Enter</strong>.</li>
-  <li>A file picker dialog will appear — select your <code>chatgpt_export_YYYY-MM-DD.zip</code> file from Step 1.</li>
-  <li>The script does the rest automatically. A progress overlay shows live status.</li>
-  <li>When finished, a summary screen shows projects created and documents uploaded. Click <strong>Close</strong> to dismiss.</li>
+  <li>An overlay will appear. Click <strong>Minimize &amp; Capture</strong>, then <strong>send any message</strong> in Claude's chat. This lets the script capture your session's auth headers.</li>
+  <li>The overlay reappears with a file picker — select your <code>chatgpt_export_YYYY-MM-DD.zip</code> file from Step 1.</li>
+  <li>If you belong to multiple Claude organizations (e.g., Free + Team), a picker appears — <strong>choose your org</strong>.</li>
+  <li>A list of your existing Claude Projects appears — <strong>click the project</strong> you want all conversations uploaded into.</li>
+  <li>The script uploads every conversation as a knowledge document. A progress overlay shows live status.</li>
+  <li>When finished, a summary screen shows documents uploaded. Click <strong>Close</strong> to dismiss.</li>
 </ol>
 
 <!-- ── SCREENSHOT: Importer — file select ────────────────── -->
@@ -465,18 +468,18 @@ My Project/Some Title (2).txt</code></pre>
 <h3 id="import-how">How It Works</h3>
 <ol>
   <li><strong>URL Check</strong> — Verifies the script is running on <code>claude.ai</code>. If the hostname does not match, an alert is shown and the script exits immediately.</li>
+  <li><strong>Auth Capture</strong> — The overlay minimizes and the script intercepts <code>window.fetch</code> to capture auth headers from the next Claude API call the user triggers (e.g., sending a message). These headers are replayed via un-patched native <code>fetch</code> (obtained from a hidden iframe) for all subsequent API calls.</li>
   <li><strong>File Selection</strong> — Presents a styled file picker (<code>&lt;input type="file" accept=".zip"&gt;</code>). The user selects the export zip.</li>
   <li><strong>Parse</strong> — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). See <a href="#import-zip">Built-in Zip Reader</a>.</li>
-  <li><strong>Group</strong> — Files are grouped by their top-level folder name. Each folder becomes a Claude Project. Files without a folder go into a <code>No Project</code> project.</li>
-  <li><strong>Organization</strong> — Fetches the current Claude organization ID from <code>/api/organizations</code> (uses the first org returned).</li>
-  <li><strong>Deduplication</strong> — Lists existing Claude Projects and performs a case-insensitive name match. If a project with the same name already exists, it is reused instead of creating a duplicate.</li>
-  <li><strong>Create Projects</strong> — New projects are created via <code>POST /api/organizations/{orgId}/projects</code> with <code>is_private: true</code>.</li>
-  <li><strong>Upload Documents</strong> — Each conversation <code>.txt</code> is uploaded as a multipart form (<code>FormData</code>) to the project's docs endpoint.</li>
-  <li><strong>Summary</strong> — Displays a completion screen with counts of projects created, projects reused, documents uploaded, and errors.</li>
+  <li><strong>Flatten</strong> — All files are flattened into a single list. Each filename is prefixed with its original folder name in brackets (e.g., <code>[Work Projects] Refactor auth.txt</code>) so you can identify the ChatGPT project it came from.</li>
+  <li><strong>Organization Picker</strong> — Fetches all Claude organizations from <code>/api/organizations</code>. If you belong to multiple orgs (e.g., personal Free plan + a Team workspace), a picker lets you choose which one. Single-org accounts skip this step.</li>
+  <li><strong>Project Picker</strong> — Lists your existing Claude Projects and presents them as clickable buttons. You choose which project to upload all conversations into.</li>
+  <li><strong>Upload Documents</strong> — Each conversation <code>.txt</code> is uploaded as a multipart form (<code>FormData</code>) to the chosen project's docs endpoint.</li>
+  <li><strong>Summary</strong> — Displays a completion screen with the count of documents uploaded and any errors.</li>
 </ol>
 
 <blockquote>
-  <p><strong>Why does this work?</strong> The script runs inside an active Claude session. The browser already holds your Claude session cookie and authorization token, so the script can call Claude's internal APIs on your behalf — no extra authentication needed.</p>
+  <p><strong>Why does this work?</strong> Claude's frontend wraps <code>window.fetch</code> and adds auth headers (session tokens, client identifiers) internally. Our script captures those headers by intercepting a real API call, then uses un-patched native <code>fetch</code> (from a hidden iframe) to make its own requests with the same credentials. This bypasses the wrapper entirely while preserving full authentication.</p>
 </blockquote>
 
 <h3 id="import-endpoints">Claude API Endpoints Used</h3>
@@ -484,8 +487,7 @@ My Project/Some Title (2).txt</code></pre>
   <thead><tr><th>Endpoint</th><th>Method</th><th>Purpose</th></tr></thead>
   <tbody>
     <tr><td><code>/api/organizations</code></td><td>GET</td><td>Retrieve the current user's organization UUID</td></tr>
-    <tr><td><code>/api/organizations/{orgId}/projects</code></td><td>GET</td><td>List existing projects (for duplicate detection)</td></tr>
-    <tr><td><code>/api/organizations/{orgId}/projects</code></td><td>POST</td><td>Create a new project (<code>name</code>, <code>description</code>, <code>is_private</code>)</td></tr>
+    <tr><td><code>/api/organizations/{orgId}/projects</code></td><td>GET</td><td>List existing projects (for the project picker)</td></tr>
     <tr><td><code>/api/organizations/{orgId}/projects/{projectId}/docs</code></td><td>POST</td><td>Upload a conversation file as a knowledge document (multipart form)</td></tr>
   </tbody>
 </table>

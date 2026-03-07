@@ -76,7 +76,7 @@
         text-overflow: ellipsis; max-width: 100%;
       }
       #imp-log {
-        max-height: 150px; overflow-y: auto; margin-top: 1rem;
+        max-height: 40vh; overflow-y: auto; margin-top: 1rem;
         font-size: 0.75rem; font-family: monospace; padding: 0.6rem;
         background: #0e0e10; border-radius: 6px; text-align: left;
         border: 1px solid #2a2a4a; color: #888;
@@ -97,16 +97,32 @@
     </style>
     <div id="claude-imp-box">
       <h2>Claude Conversation Importer</h2>
-      <div class="imp-subtitle">Import ChatGPT conversations into Claude Projects</div>
+      <div class="imp-subtitle">Import ChatGPT conversations into a Claude Project</div>
+
+      <!-- Auth Capture -->
+      <div id="imp-auth">
+        <p style="color:#a0a0b0;font-size:0.85rem;margin-bottom:1.2rem;line-height:1.6">
+          Click the button below to minimize this overlay, then
+          say <strong style="color:#d4a574">&ldquo;Hello&rdquo;</strong> to Claude
+          so that your credentials can be captured.
+        </p>
+        <button class="imp-btn" id="imp-auth-btn">Minimize &amp; Capture</button>
+        <div id="imp-auth-status" style="margin-top:1rem;font-size:0.8rem;color:#a0a0b0;">Waiting for an API call...</div>
+      </div>
 
       <!-- File Select -->
-      <div id="imp-select">
+      <div id="imp-select" style="display:none">
         <p style="color:#a0a0b0;font-size:0.85rem;margin-bottom:1.2rem;line-height:1.6">
           Select your <code style="background:rgba(212,165,116,0.15);padding:0.15rem 0.4rem;border-radius:4px;color:#d4a574">chatgpt_export.zip</code>
-          file.<br>Each folder becomes a Claude Project, and each conversation<br>is uploaded as a knowledge document.
+          file.<br>All conversations will be uploaded as knowledge documents<br>into one existing Claude Project.
         </p>
         <input type="file" id="imp-file-input" accept=".zip" />
-        <button class="imp-btn" onclick="document.getElementById('imp-file-input').click()">Select Zip File</button>
+        <button class="imp-btn" id="imp-select-btn">Select Zip File</button>
+      </div>
+
+      <!-- Picker (reused for org + project selection) -->
+      <div id="imp-pick" style="display:none">
+        <div id="imp-pick-list" style="text-align:left;max-height:40vh;overflow-y:auto;"></div>
       </div>
 
       <!-- Progress -->
@@ -124,14 +140,26 @@
         <div style="font-size:1.3rem;font-weight:600;color:#4ade80">Import Complete!</div>
         <div id="imp-summary"></div>
         <div id="imp-projects-list"></div>
-        <button class="imp-btn-close" onclick="document.getElementById('claude-importer-overlay').remove()">Close</button>
+        <button class="imp-btn-close" id="imp-close-btn">Close</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
 
+  // Wire up button handlers (no inline onclick — CSP blocks them on claude.ai)
+  document.getElementById('imp-select-btn').addEventListener('click', () => {
+    document.getElementById('imp-file-input').click();
+  });
+  document.getElementById('imp-close-btn').addEventListener('click', () => {
+    document.getElementById('claude-importer-overlay').remove();
+  });
+
   const ui = {
+    auth: document.getElementById('imp-auth'),
+    authStatus: document.getElementById('imp-auth-status'),
     select: document.getElementById('imp-select'),
+    pick: document.getElementById('imp-pick'),
+    pickList: document.getElementById('imp-pick-list'),
     progress: document.getElementById('imp-progress'),
     done: document.getElementById('imp-done'),
     counter: document.getElementById('imp-counter'),
@@ -141,12 +169,79 @@
     log: document.getElementById('imp-log'),
   };
 
+  // ─── AUTH HEADER CAPTURE ──────────────────────────────────
+  // Claude's fetch wrapper adds auth headers internally.
+  // We intercept a real API call (user sends a message) to capture them,
+  // then replay those exact headers via un-patched native fetch.
+  let _capturedHeaders = {};
+
+  // Get un-patched native fetch via hidden iframe (bypasses Claude's wrapper)
+  const _iframe = document.createElement('iframe');
+  _iframe.style.display = 'none';
+  document.body.appendChild(_iframe);
+  const _nativeFetch = _iframe.contentWindow.fetch.bind(_iframe.contentWindow);
+
+  function startHeaderCapture() {
+    return new Promise((resolve) => {
+      const wrappedFetch = window.fetch;
+      window.fetch = function (input, init = {}) {
+        const url = typeof input === 'string' ? input
+          : input instanceof Request ? input.url : '';
+
+        if (url.includes('/api/') && !url.includes('sentry') && !url.includes('intercom')) {
+          const headers = {};
+          // Read from init.headers
+          const h = init.headers;
+          if (h) {
+            if (h instanceof Headers) {
+              h.forEach((v, k) => { headers[k] = v; });
+            } else if (typeof h === 'object') {
+              for (const [k, v] of Object.entries(h)) headers[k] = String(v);
+            }
+          }
+          // Read from Request object
+          if (input instanceof Request) {
+            input.headers.forEach((v, k) => { if (!headers[k]) headers[k] = v; });
+          }
+
+          if (Object.keys(headers).length > 0) {
+            _capturedHeaders = headers;
+            window.fetch = wrappedFetch; // restore
+            resolve(headers);
+          }
+        }
+        return wrappedFetch.apply(this, arguments);
+      };
+    });
+  }
+
+  // "Minimize & Capture" button — hide overlay, start intercepting
+  document.getElementById('imp-auth-btn').addEventListener('click', () => {
+    overlay.style.display = 'none';
+    ui.authStatus.textContent = 'Listening for API calls...';
+
+    startHeaderCapture().then((headers) => {
+      const keys = Object.keys(headers);
+      console.log(`✅ Captured ${keys.length} headers:`, keys);
+      console.log('Header values:', JSON.stringify(headers, null, 2));
+
+      // Show overlay again with file select
+      overlay.style.display = 'flex';
+      ui.auth.style.display = 'none';
+      ui.select.style.display = 'block';
+    });
+  });
+
   function logMsg(msg, cls = '') {
     const d = document.createElement('div');
     d.className = cls;
     d.textContent = msg;
     ui.log.appendChild(d);
     ui.log.scrollTop = ui.log.scrollHeight;
+    // Mirror to browser console so messages survive overlay hide/remove
+    if (cls.includes('err')) console.error('[Importer]', msg);
+    else if (cls.includes('warn')) console.warn('[Importer]', msg);
+    else console.log('[Importer]', msg);
   }
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -226,59 +321,93 @@
   }
 
   // ─── CLAUDE API HELPERS ───────────────────────────────────
+  // All API calls use native (un-patched) fetch + captured headers.
 
-  // Get organization ID from the page
-  async function getOrgId() {
-    // Try fetching from the organizations endpoint
-    const resp = await fetch('/api/organizations');
-    if (!resp.ok) throw new Error(`Failed to fetch orgs: ${resp.status}`);
-    const orgs = await resp.json();
-    if (orgs.length === 0) throw new Error('No organizations found');
-    // Use the first (usually only) org
-    return orgs[0].uuid;
+  function buildHeaders(contentType) {
+    const h = {};
+    // Copy captured headers, excluding Content-Type (we set our own)
+    for (const [k, v] of Object.entries(_capturedHeaders)) {
+      if (k.toLowerCase() !== 'content-type') h[k] = v;
+    }
+    if (contentType) h['Content-Type'] = contentType;
+    return h;
   }
 
-  // List existing projects
-  async function listProjects(orgId) {
-    const resp = await fetch(`/api/organizations/${orgId}/projects`);
-    if (!resp.ok) throw new Error(`Failed to list projects: ${resp.status}`);
-    return await resp.json();
+  async function apiGet(url) {
+    const resp = await _nativeFetch(url, { credentials: 'include', headers: buildHeaders() });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`GET ${resp.status}: ${text.slice(0, 300)}`);
+    }
+    return resp.json();
   }
 
-  // Create a new project
-  async function createProject(orgId, name, description = '') {
-    const resp = await fetch(`/api/organizations/${orgId}/projects`, {
+  async function apiPost(url, body) {
+    const resp = await _nativeFetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name,
-        description: description || `Imported from ChatGPT — ${name}`,
-        is_private: true,
-      }),
+      credentials: 'include',
+      headers: buildHeaders('application/json'),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
-      throw new Error(`Failed to create project "${name}": ${resp.status} ${text.slice(0, 200)}`);
+      throw new Error(`POST ${resp.status}: ${text.slice(0, 300)}`);
     }
-    return await resp.json();
+    return resp.json();
   }
 
-  // Upload a document to a project
-  async function uploadDocument(orgId, projectId, fileName, content) {
-    // Claude uses multipart form upload for project docs
-    const blob = new Blob([content], { type: 'text/plain' });
-    const formData = new FormData();
-    formData.append('file', blob, fileName);
-
-    const resp = await fetch(`/api/organizations/${orgId}/projects/${projectId}/docs`, {
+  async function apiPostForm(url, formData) {
+    // No Content-Type — browser sets multipart boundary automatically
+    const resp = await _nativeFetch(url, {
       method: 'POST',
+      credentials: 'include',
+      headers: buildHeaders(),
       body: formData,
     });
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
-      throw new Error(`Upload failed: ${resp.status} ${text.slice(0, 200)}`);
+      throw new Error(`POST ${resp.status}: ${text.slice(0, 300)}`);
     }
-    return await resp.json();
+    return resp.json();
+  }
+
+  // Fetch all organizations
+  async function getOrgs() {
+    const orgs = await apiGet('/api/organizations');
+    if (orgs.length === 0) throw new Error('No organizations found');
+    return orgs;
+  }
+
+  // List existing projects
+  async function listProjects(orgId) {
+    return apiGet(`/api/organizations/${orgId}/projects`);
+  }
+
+  // Upload a document to a project
+  async function uploadDocument(orgId, projectId, fileName, content) {
+    return apiPost(`/api/organizations/${orgId}/projects/${projectId}/docs`, {
+      file_name: fileName,
+      content: content,
+    });
+  }
+
+  // Generic picker — shows a list of items as buttons and returns the chosen one
+  function showPicker(label, items, displayKey) {
+    return new Promise((resolve) => {
+      ui.pickList.innerHTML = '';
+      const heading = document.createElement('div');
+      heading.style.cssText = 'font-weight:600;margin-bottom:0.5rem;color:#e0e0e0;font-size:0.85rem;';
+      heading.textContent = label;
+      ui.pickList.appendChild(heading);
+      for (const item of items) {
+        const btn = document.createElement('button');
+        btn.className = 'imp-btn';
+        btn.style.cssText = 'display:block;width:100%;margin:0.4rem 0;text-align:left;padding:0.6rem 1rem;font-size:0.85rem;';
+        btn.textContent = typeof displayKey === 'function' ? displayKey(item) : item[displayKey];
+        btn.addEventListener('click', () => resolve(item));
+        ui.pickList.appendChild(btn);
+      }
+    });
   }
 
   // ─── FILE INPUT HANDLER ───────────────────────────────────
@@ -300,6 +429,10 @@
 
   // ─── MAIN IMPORT LOGIC ───────────────────────────────────
   async function runImport(file) {
+    // Log captured headers for diagnostics
+    const hdrKeys = Object.keys(_capturedHeaders);
+    logMsg(`Captured ${hdrKeys.length} auth headers: ${hdrKeys.join(', ')}`, hdrKeys.length > 0 ? 'imp-ok' : 'imp-err');
+
     // Step 1: Read and parse the zip
     ui.status.textContent = 'Reading zip file...';
     const buffer = await file.arrayBuffer();
@@ -314,9 +447,9 @@
 
     logMsg(`Found ${zipFiles.length} files in zip`, 'imp-ok');
 
-    // Step 2: Decompress and group files by project (top-level folder)
+    // Step 2: Decompress all files into a flat list with folder-prefixed names
     ui.status.textContent = 'Decompressing files...';
-    const projectMap = {};  // projectName -> [{fileName, content}]
+    const allFiles = [];  // [{fileName, content}]
     for (const zf of zipFiles) {
       let decompressed;
       try {
@@ -326,105 +459,97 @@
         continue;
       }
       const parts = zf.name.split('/');
-      let project, fileName;
+      let fileName;
       if (parts.length >= 2) {
-        project = parts[0];
-        fileName = parts.slice(1).join('/');
+        const folder = parts[0];
+        const base = parts.slice(1).join('/');
+        fileName = `[${folder}] ${base}`;
       } else {
-        project = 'No Project';
         fileName = parts[0];
       }
-      if (!projectMap[project]) projectMap[project] = [];
       const content = new TextDecoder().decode(decompressed);
-      projectMap[project].push({ fileName, content });
+      allFiles.push({ fileName, content });
     }
 
-    const projectNames = Object.keys(projectMap).sort();
-    const totalFiles = zipFiles.length;
-    logMsg(`Found ${projectNames.length} projects with ${totalFiles} total conversations`, 'imp-ok');
+    const totalFiles = allFiles.length;
+    logMsg(`${totalFiles} conversations ready to upload`, 'imp-ok');
 
-    // Step 3: Get org ID
+    // Step 3: Pick organization (show picker if multiple)
     ui.status.textContent = 'Getting organization info...';
-    let orgId;
+    let orgs;
     try {
-      orgId = await getOrgId();
-      logMsg(`Organization ID: ${orgId.slice(0, 8)}...`, 'imp-ok');
+      orgs = await getOrgs();
     } catch (err) {
-      ui.status.textContent = 'Failed to get org ID: ' + err.message;
+      ui.status.textContent = 'Failed to get orgs: ' + err.message;
       logMsg(err.message, 'imp-err');
       return;
     }
 
-    // Step 4: Get existing projects to avoid duplicates
-    ui.status.textContent = 'Checking existing projects...';
+    let chosenOrg;
+    if (orgs.length === 1) {
+      chosenOrg = orgs[0];
+    } else {
+      logMsg(`Found ${orgs.length} organizations`, 'imp-ok');
+      ui.progress.style.display = 'none';
+      ui.pick.style.display = 'block';
+      chosenOrg = await showPicker(
+        'Choose your organization:',
+        orgs,
+        (o) => `${o.name}${o.billing_type ? ` (${o.billing_type})` : ''}`
+      );
+      ui.pick.style.display = 'none';
+      ui.progress.style.display = 'block';
+    }
+    const orgId = chosenOrg.uuid;
+    logMsg(`Organization: ${chosenOrg.name} (${orgId.slice(0, 8)}...)`, 'imp-ok');
+
+    // Step 4: List existing projects and let user pick one
+    ui.status.textContent = 'Loading projects...';
     let existingProjects = [];
     try {
       existingProjects = await listProjects(orgId);
     } catch (err) {
-      logMsg('Warning: Could not list existing projects: ' + err.message, 'imp-warn');
+      ui.status.textContent = 'Failed to list projects: ' + err.message;
+      logMsg(err.message, 'imp-err');
+      return;
     }
-    const existingNames = new Map();
-    for (const p of existingProjects) {
-      existingNames.set(p.name.toLowerCase(), p.uuid);
+    if (existingProjects.length === 0) {
+      ui.status.textContent = 'No existing projects found. Create one in Claude first.';
+      logMsg('No projects found — create at least one project in Claude and re-run.', 'imp-err');
+      return;
     }
 
-    // Step 5: Create projects and upload files
-    let projectsCreated = 0;
-    let projectsReused = 0;
+    // Show project picker
+    ui.progress.style.display = 'none';
+    ui.pick.style.display = 'block';
+    logMsg(`Found ${existingProjects.length} existing projects`, 'imp-ok');
+    const chosenProject = await showPicker('Choose a project:', existingProjects, 'name');
+    const projectId = chosenProject.uuid;
+    logMsg(`Selected project: ${chosenProject.name}`, 'imp-ok');
+    ui.pick.style.display = 'none';
+    ui.progress.style.display = 'block';
+
+    // Step 5: Upload all files to the chosen project
     let filesUploaded = 0;
     let fileErrors = 0;
-    let fileIndex = 0;
-    const projectResults = {};
 
-    for (const projectName of projectNames) {
-      const files = projectMap[projectName];
-      let projectId;
+    for (let i = 0; i < allFiles.length; i++) {
+      const f = allFiles[i];
+      const pct = Math.round(((i + 1) / totalFiles) * 100);
+      ui.bar.style.width = pct + '%';
+      ui.counter.textContent = `${i + 1} / ${totalFiles} files`;
+      ui.current.textContent = f.fileName;
+      ui.status.textContent = `Uploading to ${chosenProject.name}...`;
 
-      // Check if project already exists
-      const existingId = existingNames.get(projectName.toLowerCase());
-      if (existingId) {
-        projectId = existingId;
-        projectsReused++;
-        logMsg(`Project exists, reusing: ${projectName}`, 'imp-warn');
-      } else {
-        // Create new project
-        try {
-          ui.status.textContent = `Creating project: ${projectName}...`;
-          const proj = await createProject(orgId, projectName);
-          projectId = proj.uuid;
-          projectsCreated++;
-          logMsg(`Created project: ${projectName}`, 'imp-ok');
-          await sleep(DELAY_MS);
-        } catch (err) {
-          logMsg(`Failed to create project "${projectName}": ${err.message}`, 'imp-err');
-          fileErrors += files.length;
-          fileIndex += files.length;
-          continue;
-        }
+      try {
+        await uploadDocument(orgId, projectId, f.fileName, f.content);
+        filesUploaded++;
+      } catch (err) {
+        fileErrors++;
+        logMsg(`Error: ${f.fileName} — ${err.message}`, 'imp-err');
       }
 
-      projectResults[projectName] = { total: files.length, uploaded: 0 };
-
-      // Upload each conversation file
-      for (const f of files) {
-        fileIndex++;
-        const pct = Math.round((fileIndex / totalFiles) * 100);
-        ui.bar.style.width = pct + '%';
-        ui.counter.textContent = `${fileIndex} / ${totalFiles} files`;
-        ui.current.textContent = `${projectName} / ${f.fileName}`;
-        ui.status.textContent = `Uploading to ${projectName}...`;
-
-        try {
-          await uploadDocument(orgId, projectId, f.fileName, f.content);
-          filesUploaded++;
-          projectResults[projectName].uploaded++;
-        } catch (err) {
-          fileErrors++;
-          logMsg(`Error: ${f.fileName} — ${err.message}`, 'imp-err');
-        }
-
-        await sleep(DELAY_MS);
-      }
+      await sleep(DELAY_MS);
     }
 
     // Step 6: Show results
@@ -433,19 +558,13 @@
 
     const summary = document.getElementById('imp-summary');
     summary.innerHTML = `
-      <strong>${projectsCreated}</strong> projects created
-      ${projectsReused > 0 ? `<br><span style="color:#fbbf24">${projectsReused} projects already existed (reused)</span>` : ''}
-      <br><strong>${filesUploaded}</strong> conversations uploaded
+      <strong>${filesUploaded}</strong> conversations uploaded to <strong>${chosenProject.name}</strong>
       ${fileErrors > 0 ? `<br><span style="color:#f87171">${fileErrors} errors</span>` : ''}
     `;
 
-    const projList = document.getElementById('imp-projects-list');
-    projList.innerHTML = '<div style="font-weight:600;margin-bottom:0.5rem;color:#e0e0e0">Projects</div>';
-    for (const [name, result] of Object.entries(projectResults).sort((a, b) => a[0].localeCompare(b[0]))) {
-      projList.innerHTML += `<div class="imp-proj-item"><span>${result.uploaded}</span> / ${result.total} — ${name}</div>`;
-    }
+    document.getElementById('imp-projects-list').style.display = 'none';
 
-    console.log(`✅ Claude Import complete: ${projectsCreated} projects, ${filesUploaded} docs uploaded, ${fileErrors} errors`);
+    console.log(`✅ Claude Import complete: ${filesUploaded} docs uploaded to "${chosenProject.name}", ${fileErrors} errors`);
   }
 
 })();

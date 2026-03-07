@@ -158,31 +158,33 @@ The exporter includes a minimal, dependency-free zip writer implemented in pure 
 3. Click the **Console** tab.
 4. Copy the entire contents of **`ClaudeConversationImporter.js`**.
 5. **Paste** it into the console and press **Enter**.
-6. A file picker dialog will appear — select your `chatgpt_export_YYYY-MM-DD.zip` file from Step 1.
-7. The script does the rest automatically. A progress overlay shows live status.
-8. When finished, a summary screen shows projects created and documents uploaded. Click **Close** to dismiss.
+6. An overlay will appear. Click **Minimize & Capture**, then **send any message** in Claude's chat. This lets the script capture your session's auth headers.
+7. The overlay reappears with a file picker — select your `chatgpt_export_YYYY-MM-DD.zip` file from Step 1.
+8. If you belong to multiple Claude organizations (e.g., Free + Team), a picker appears — **choose your org**.
+9. A list of your existing Claude Projects appears — **click the project** you want all conversations uploaded into.
+10. The script uploads every conversation as a knowledge document. A progress overlay shows live status.
+11. When finished, a summary screen shows documents uploaded. Click **Close** to dismiss.
 
 ### How It Works
 
 1. **URL Check** — Verifies the script is running on `claude.ai`. If the hostname does not match, an alert is shown and the script exits immediately.
-2. **File Selection** — Presents a styled file picker (`<input type="file" accept=".zip">`). The user selects the export zip.
-3. **Parse** — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). See [Built-in Zip Reader](#built-in-zip-reader).
-4. **Group** — Files are grouped by their top-level folder name. Each folder becomes a Claude Project. Files without a folder go into a `No Project` project.
-5. **Organization** — Fetches the current Claude organization ID from `/api/organizations` (uses the first org returned).
-6. **Deduplication** — Lists existing Claude Projects and performs a case-insensitive name match. If a project with the same name already exists, it is reused instead of creating a duplicate.
-7. **Create Projects** — New projects are created via `POST /api/organizations/{orgId}/projects` with `is_private: true`.
-8. **Upload Documents** — Each conversation `.txt` is uploaded as a multipart form (`FormData`) to the project's docs endpoint.
-9. **Summary** — Displays a completion screen with counts of projects created, projects reused, documents uploaded, and errors.
+2. **Auth Capture** — The overlay minimizes and the script intercepts `window.fetch` to capture auth headers from the next Claude API call the user triggers (e.g., sending a message). These headers are replayed via un-patched native `fetch` (obtained from a hidden iframe) for all subsequent API calls.
+3. **File Selection** — Presents a styled file picker (`<input type="file" accept=".zip">`). The user selects the export zip.
+4. **Parse** — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). See [Built-in Zip Reader](#built-in-zip-reader).
+5. **Flatten** — All files are flattened into a single list. Each filename is prefixed with its original folder name in brackets (e.g., `[Work Projects] Refactor auth.txt`) so you can identify the ChatGPT project it came from.
+6. **Organization Picker** — Fetches all Claude organizations from `/api/organizations`. If you belong to multiple orgs (e.g., personal Free plan + a Team workspace), a picker lets you choose which one. Single-org accounts skip this step.
+7. **Project Picker** — Lists your existing Claude Projects and presents them as clickable buttons. You choose which project to upload all conversations into.
+8. **Upload Documents** — Each conversation `.txt` is uploaded as a multipart form (`FormData`) to the chosen project's docs endpoint.
+9. **Summary** — Displays a completion screen with the count of documents uploaded and any errors.
 
-> **Why does this work?** The script runs inside an active Claude session. The browser already holds your Claude session cookie and authorization token, so the script can call Claude's internal APIs on your behalf — no extra authentication needed.
+> **Why does this work?** Claude's frontend wraps `window.fetch` and adds auth headers (session tokens, client identifiers) internally. Our script captures those headers by intercepting a real API call, then uses un-patched native `fetch` (from a hidden iframe) to make its own requests with the same credentials. This bypasses the wrapper entirely while preserving full authentication.
 
 ### Claude API Endpoints Used
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/organizations` | GET | Retrieve the current user's organization UUID |
-| `/api/organizations/{orgId}/projects` | GET | List existing projects (for duplicate detection) |
-| `/api/organizations/{orgId}/projects` | POST | Create a new project (`name`, `description`, `is_private`) |
+| `/api/organizations/{orgId}/projects` | GET | List existing projects (for the project picker) |
 | `/api/organizations/{orgId}/projects/{projectId}/docs` | POST | Upload a conversation file as a knowledge document (multipart form) |
 
 ### Configuration
@@ -203,13 +205,18 @@ The importer includes a minimal, dependency-free zip reader implemented in pure 
 
 > **Note:** The exporter generates STORE-method (uncompressed) zips for maximum compatibility. The importer also handles DEFLATE-compressed zips produced by other tools. Directories and zero-length entries are skipped.
 
-### Duplicate Project Handling
+### Filename Flattening
 
-Before creating any projects, the importer fetches the full list of existing Claude Projects and builds a case-insensitive lookup map. If a project with a matching name already exists:
+Since all conversations are uploaded into a single project, the original folder structure is preserved in each filename using a bracket prefix:
 
-- The existing project's UUID is reused.
-- A warning is logged: `Project exists, reusing: {name}`.
-- Conversation documents are uploaded into the existing project alongside any prior content.
+```
+[Work Projects] Refactor auth module.txt
+[Side Projects] Build a CLI tool.txt
+[No Project] Random question.txt
+[Custom GPT (g-abc123…)] Design review.txt
+```
+
+This lets you identify which ChatGPT project/workspace each conversation originally belonged to.
 
 ---
 
