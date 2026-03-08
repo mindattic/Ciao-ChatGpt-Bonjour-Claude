@@ -5,7 +5,6 @@
 //  2. Press F12 → Console tab
 //  3. Paste this entire script and press Enter
 //  4. It will export all conversations as .txt files in a .zip
-//     organized by project folders
 // ============================================================
 
 (async function() {
@@ -231,13 +230,6 @@
     logMsg(`Project scan: ${e.message}`, 'cgpt-exp-warn');
   }
 
-  // Enrich conversations that have a project_id but no project name
-  for (const conv of allConvs) {
-    if (!conv.project && conv.project_id && projectNameById[conv.project_id]) {
-      conv.project = { name: projectNameById[conv.project_id], id: conv.project_id };
-    }
-  }
-
   const total = allConvs.length;
   ui.counter.textContent = `0 / ${total} conversations`;
   ui.status.textContent = `Found ${total} conversations. Starting export...`;
@@ -329,58 +321,7 @@
 
   const zip = new ZipWriter();
 
-  // ─── GPT NAME RESOLUTION ──────────────────────────────────
-  // Resolve Custom GPT gizmo_ids to their display names via the API.
-  // Names are cached so each GPT is only fetched once.
-  const gptNameCache = {};  // gizmo_id -> display name
-
-  async function resolveGptName(gizmoId) {
-    if (gptNameCache[gizmoId]) return gptNameCache[gizmoId];
-    try {
-      const resp = await fetch(`${BASE}/gizmos/${gizmoId}`, { headers: hdrs });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      const gizmo = data.gizmo || data;
-      const name = gizmo.display?.name || gizmo.name || gizmo.title || null;
-      if (name) {
-        gptNameCache[gizmoId] = name;
-        return name;
-      }
-    } catch (e) {
-      logMsg(`Could not resolve GPT name for ${gizmoId.slice(0, 12)}: ${e.message}`, 'cgpt-exp-warn');
-    }
-    // Fallback to truncated ID
-    const fallback = `Custom GPT (${gizmoId.slice(0, 12)})`;
-    gptNameCache[gizmoId] = fallback;
-    return fallback;
-  }
-
-  // Batch-resolve all unique gizmo_ids before the main export loop
-  const uniqueGizmoIds = [...new Set(allConvs.map(c => c.gizmo_id).filter(Boolean))];
-  if (uniqueGizmoIds.length > 0) {
-    ui.status.textContent = `Resolving ${uniqueGizmoIds.length} Custom GPT names...`;
-    for (let i = 0; i < uniqueGizmoIds.length; i++) {
-      await resolveGptName(uniqueGizmoIds[i]);
-      await sleep(DELAY_MS);
-    }
-    logMsg(`Resolved ${uniqueGizmoIds.length} Custom GPT names`, '');
-  }
-
   // ─── HELPERS ──────────────────────────────────────────────
-  function getProject(conv) {
-    for (const key of ['project', 'workspace']) {
-      const val = conv[key];
-      if (val) {
-        if (typeof val === 'object') return val.name || val.title || 'No Project';
-        if (typeof val === 'string') return val;
-      }
-    }
-    if (conv.project_id && projectNameById[conv.project_id]) return projectNameById[conv.project_id];
-    if (conv.gizmo_id && gptNameCache[conv.gizmo_id]) return gptNameCache[conv.gizmo_id];
-    if (conv.gizmo_id) return `Custom GPT (${conv.gizmo_id.slice(0, 12)})`;
-    return 'No Project';
-  }
-
   function extractMessages(detail) {
     const mapping = detail.mapping || {};
     const childrenMap = {};
@@ -446,28 +387,24 @@
 
   // ─── EXPORT EACH CONVERSATION ─────────────────────────────
   let success = 0, errors = 0;
-  const projectCounts = {};
   const usedPaths = new Set();
 
   for (let i = 0; i < allConvs.length; i++) {
     const conv = allConvs[i];
     const cid = conv.id || 'unknown';
     const title = conv.title || 'Untitled';
-    const project = sanitize(getProject(conv));
     const safeTitle = sanitize(title);
 
-    projectCounts[project] = (projectCounts[project] || 0) + 1;
-
-    // Build unique file path
-    let filePath = `${project}/${safeTitle}.txt`;
+    // Build unique flat file path (no folder nesting)
+    let filePath = `${safeTitle}.txt`;
     if (usedPaths.has(filePath)) {
       let c = 1;
-      while (usedPaths.has(`${project}/${safeTitle} (${c}).txt`)) c++;
-      filePath = `${project}/${safeTitle} (${c}).txt`;
+      while (usedPaths.has(`${safeTitle} (${c}).txt`)) c++;
+      filePath = `${safeTitle} (${c}).txt`;
     }
     usedPaths.add(filePath);
 
-    updateUI(i + 1, total, project, safeTitle);
+    updateUI(i + 1, total, '', safeTitle);
 
     try {
       const resp = await fetch(`${BASE}/conversation/${cid}`, { headers: hdrs });
@@ -530,11 +467,6 @@
   URL.revokeObjectURL(url);
 
   // ─── DONE ─────────────────────────────────────────────────
-  const projectSummary = Object.entries(projectCounts)
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, count]) => `  ${count} — ${name}`)
-    .join('\n');
-
   ui.counter.textContent = 'Export Complete!';
   ui.counter.style.background = 'linear-gradient(135deg, #4ade80, #6c63ff)';
   ui.counter.style.webkitBackgroundClip = 'text';
@@ -544,11 +476,8 @@
   ui.status.innerHTML = `
     <strong>${success}</strong> conversations exported
     ${errors > 0 ? `<br><span style="color:#fbbf24">${errors} errors</span>` : ''}
-    <br><br><strong>Projects:</strong>
   `;
-  ui.current.style.whiteSpace = 'pre';
-  ui.current.style.textAlign = 'left';
-  ui.current.textContent = projectSummary;
+  ui.current.textContent = '';
 
   // Add close button
   const closeBtn = document.createElement('button');
@@ -558,6 +487,5 @@
   document.getElementById('cgpt-exporter-box').appendChild(closeBtn);
 
   console.log(`✅ ChatGPT Export complete: ${success} conversations, ${errors} errors`);
-  console.log('Projects:', projectCounts);
 
 })();

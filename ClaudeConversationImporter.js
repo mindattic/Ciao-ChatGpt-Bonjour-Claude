@@ -2,15 +2,14 @@
 //  Claude Conversation Importer — Browser Console Script
 // ============================================================
 //  Imports ChatGPT conversations (from the exporter zip) into
-//  Claude as Projects with knowledge documents.
+//  a single Claude Project as new chats.
 //
 //  1. Go to https://claude.ai (make sure you're logged in)
 //  2. Press F12 → Console tab
 //  3. Paste this entire script and press Enter
 //  4. Select your chatgpt_export zip file
-//  5. It creates Claude Projects matching each export folder
-//     and imports conversations as new Claude chats.
-//     If project slots are limited, small folders are merged.
+//  5. Pick a Claude Project to import into
+//  6. All conversations become new chats in that project
 // ============================================================
 
 (async function () {
@@ -95,27 +94,10 @@
       }
       .imp-proj-item { padding: 0.3rem 0; color: #a0a0b0; }
       .imp-proj-item span { color: #6c63ff; font-weight: 600; }
-      .imp-toggle {
-        display: flex; align-items: flex-start; gap: 0.6rem;
-        text-align: left; margin: 1.2rem 0 0.2rem 0; padding: 0.8rem 1rem;
-        background: #0e0e10; border-radius: 8px; border: 1px solid #2a2a4a;
-        cursor: pointer; transition: border-color 0.2s;
-      }
-      .imp-toggle:hover { border-color: #6c63ff; }
-      .imp-toggle input[type="checkbox"] {
-        margin-top: 0.2rem; accent-color: #6c63ff; width: 16px; height: 16px;
-        flex-shrink: 0; cursor: pointer;
-      }
-      .imp-toggle-label {
-        font-size: 0.85rem; color: #e0e0e0; font-weight: 600; line-height: 1.4;
-      }
-      .imp-toggle-hint {
-        font-size: 0.75rem; color: #888; margin-top: 0.15rem; line-height: 1.4;
-      }
     </style>
     <div id="claude-imp-box">
       <h2>Claude Conversation Importer</h2>
-      <div class="imp-subtitle">Import ChatGPT conversations into Claude Projects</div>
+      <div class="imp-subtitle">Import ChatGPT conversations into a Claude Project</div>
 
       <!-- Auth Capture -->
       <div id="imp-auth">
@@ -132,20 +114,10 @@
       <div id="imp-select" style="display:none">
         <p style="color:#a0a0b0;font-size:0.85rem;margin-bottom:1.2rem;line-height:1.6">
           Select your <code style="background:rgba(108,99,255,0.15);padding:0.15rem 0.4rem;border-radius:4px;color:#6c63ff">chatgpt_export.zip</code>
-          file.<br>Each folder becomes a Claude Project with its conversations<br>imported as new Claude chats.
+          file.<br>You will then choose a Claude Project to import all conversations into.
         </p>
         <input type="file" id="imp-file-input" accept=".zip" />
         <button class="imp-btn" id="imp-select-btn">Select Zip File</button>
-        <label class="imp-toggle">
-          <input type="checkbox" id="imp-use-projects" checked />
-          <div>
-            <div class="imp-toggle-label">Organize into Projects</div>
-            <div class="imp-toggle-hint">
-              Each folder becomes a Claude Project (limit 5 Free / 10 Team).<br>
-              Uncheck to import all conversations to the root without projects.
-            </div>
-          </div>
-        </label>
       </div>
 
       <!-- Picker (reused for org + project selection) -->
@@ -406,15 +378,6 @@
     return apiGet(`/api/organizations/${orgId}/projects`);
   }
 
-  // Create a new project
-  async function createProject(orgId, name, description) {
-    return apiPost(`/api/organizations/${orgId}/projects`, {
-      name: name,
-      description: description || `Imported from ChatGPT — ${name}`,
-      is_private: true,
-    });
-  }
-
   // Create a new chat conversation inside a project
   async function createConversation(orgId, name, projectId) {
     const uuid = crypto.randomUUID();
@@ -481,13 +444,11 @@
     const file = e.target.files[0];
     if (!file) return;
 
-    const useProjects = document.getElementById('imp-use-projects').checked;
-
     ui.select.style.display = 'none';
     ui.progress.style.display = 'block';
 
     try {
-      await runImport(file, useProjects);
+      await runImport(file);
     } catch (err) {
       ui.status.textContent = 'Fatal error: ' + err.message;
       logMsg('Fatal: ' + err.message, 'imp-err');
@@ -496,7 +457,7 @@
   });
 
   // ─── MAIN IMPORT LOGIC ───────────────────────────────────
-  async function runImport(file, useProjects) {
+  async function runImport(file) {
     // Log captured headers for diagnostics
     const hdrKeys = Object.keys(_capturedHeaders);
     logMsg(`Captured ${hdrKeys.length} auth headers: ${hdrKeys.join(', ')}`, hdrKeys.length > 0 ? 'imp-ok' : 'imp-err');
@@ -515,9 +476,9 @@
 
     logMsg(`Found ${zipFiles.length} files in zip`, 'imp-ok');
 
-    // Step 2: Decompress and group files by their original folder
+    // Step 2: Decompress all files into a flat list
     ui.status.textContent = 'Decompressing files...';
-    const folderMap = {};  // folderName -> [{fileName, content}]
+    const allFiles = [];  // [{fileName, content}]
     for (const zf of zipFiles) {
       let decompressed;
       try {
@@ -526,26 +487,16 @@
         logMsg(`Skipping ${zf.name}: ${err.message}`, 'imp-err');
         continue;
       }
+      // Use the leaf filename (strip any folder prefix from the zip)
       const parts = zf.name.split('/');
-      let folder, fileName;
-      if (parts.length >= 2) {
-        folder = parts[0];
-        fileName = parts.slice(1).join('/');
-      } else {
-        folder = 'No Project';
-        fileName = parts[0];
-      }
-      if (!folderMap[folder]) folderMap[folder] = [];
+      const fileName = parts[parts.length - 1];
+      if (!fileName) continue;
       const content = new TextDecoder().decode(decompressed);
-      folderMap[folder].push({ fileName, content });
+      allFiles.push({ fileName, content });
     }
 
-    const folderNames = Object.keys(folderMap).sort();
-    const totalFiles = Object.values(folderMap).reduce((s, f) => s + f.length, 0);
-    for (const name of folderNames) {
-      logMsg(`  ${name}: ${folderMap[name].length} files`, 'imp-ok');
-    }
-    logMsg(`${folderNames.length} folders, ${totalFiles} total conversations`, 'imp-ok');
+    const totalFiles = allFiles.length;
+    logMsg(`${totalFiles} conversations to import`, 'imp-ok');
 
     // Step 3: Pick organization (show picker if multiple)
     ui.status.textContent = 'Getting organization info...';
@@ -575,187 +526,75 @@
     }
     const orgId = chosenOrg.uuid;
     logMsg(`Organization: ${chosenOrg.name} (${orgId.slice(0, 8)}...)`, 'imp-ok');
-    logMsg(`Mode: ${useProjects ? 'Organize into Projects' : 'Import to root (no projects)'}`, 'imp-ok');
 
-    // Step 4+: Branch based on project mode
-    let projectsCreated = 0;
-    let projectsReused = 0;
-    let filesUploaded = 0;
-    let fileErrors = 0;
-    let fileIndex = 0;
-    const projectResults = {};
-
-    if (!useProjects) {
-      // ── FLAT MODE — import all conversations to the org root ──
-      const allFiles = [];
-      for (const folder of folderNames) {
-        for (const f of folderMap[folder]) {
-          allFiles.push(f);
-        }
-      }
-
-      const groupName = '(root)';
-      projectResults[groupName] = { total: allFiles.length, uploaded: 0 };
-
-      for (const f of allFiles) {
-        fileIndex++;
-        const pct = Math.round((fileIndex / totalFiles) * 100);
-        ui.bar.style.width = pct + '%';
-        ui.counter.textContent = `${fileIndex} / ${totalFiles} conversations`;
-        ui.current.textContent = f.fileName;
-        ui.status.textContent = 'Creating conversation...';
-
-        try {
-          const title = f.fileName.replace(/\.txt$/i, '');
-          const convId = await createConversation(orgId, title, null);
-          await sendMessage(orgId, convId, f.content);
-          filesUploaded++;
-          projectResults[groupName].uploaded++;
-        } catch (err) {
-          fileErrors++;
-          logMsg(`Error: ${f.fileName} — ${err.message}`, 'imp-err');
-        }
-
-        await sleep(DELAY_MS);
-      }
-    } else {
-      // ── PROJECT MODE — organize into Claude Projects ──────────
-      // Step 4: Check existing projects to know available slots
-      ui.status.textContent = 'Checking existing projects...';
-      let existingProjects = [];
-      try {
-        existingProjects = await listProjects(orgId);
-      } catch (err) {
-        logMsg('Warning: Could not list existing projects: ' + err.message, 'imp-warn');
-      }
-      const existingNames = new Map();
-      for (const p of existingProjects) {
-        existingNames.set(p.name.toLowerCase(), p.uuid);
-      }
-      const MAX_PROJECTS = 10;
-      const usedSlots = existingProjects.length;
-      const availableSlots = Math.max(0, MAX_PROJECTS - usedSlots);
-      logMsg(`${usedSlots} existing projects, ${availableSlots} slots available (max ${MAX_PROJECTS})`, availableSlots > 0 ? 'imp-ok' : 'imp-warn');
-
-      // Step 5: Build project assignments
-      const assignments = {};
-      const foldersNeedingNewProject = [];
-
-      for (const folder of folderNames) {
-        const existingId = existingNames.get(folder.toLowerCase());
-        if (existingId) {
-          assignments[folder] = { files: folderMap[folder], id: existingId, reused: true };
-          logMsg(`Will reuse existing project: ${folder}`, 'imp-warn');
-        } else {
-          foldersNeedingNewProject.push(folder);
-        }
-      }
-
-      foldersNeedingNewProject.sort((a, b) => folderMap[b].length - folderMap[a].length);
-
-      if (foldersNeedingNewProject.length <= availableSlots) {
-        for (const folder of foldersNeedingNewProject) {
-          assignments[folder] = { files: folderMap[folder], id: null, reused: false };
-        }
-      } else {
-        const keepCount = Math.max(0, availableSlots - 1);
-        const keepFolders = foldersNeedingNewProject.slice(0, keepCount);
-        const mergeFolders = foldersNeedingNewProject.slice(keepCount);
-
-        for (const folder of keepFolders) {
-          assignments[folder] = { files: folderMap[folder], id: null, reused: false };
-        }
-
-        const miscFiles = [];
-        for (const folder of mergeFolders) {
-          for (const f of folderMap[folder]) {
-            miscFiles.push({ fileName: `[${folder}] ${f.fileName}`, content: f.content });
-          }
-        }
-        if (miscFiles.length > 0) {
-          const miscName = 'Miscellaneous';
-          const existingMiscId = existingNames.get(miscName.toLowerCase());
-          assignments[miscName] = { files: miscFiles, id: existingMiscId || null, reused: !!existingMiscId };
-          logMsg(`Merging ${mergeFolders.length} folders into "${miscName}" (${miscFiles.length} files)`, 'imp-warn');
-        }
-      }
-
-      const projectNames = Object.keys(assignments);
-      logMsg(`Plan: ${projectNames.length} projects (${projectNames.filter(n => !assignments[n].reused).length} new, ${projectNames.filter(n => assignments[n].reused).length} reused)`, 'imp-ok');
-
-      // Step 6: Create projects and conversations
-      for (const projectName of projectNames) {
-        const assignment = assignments[projectName];
-        let projectId = assignment.id;
-
-        if (assignment.reused) {
-          projectsReused++;
-        } else {
-          try {
-            ui.status.textContent = `Creating project: ${projectName}...`;
-            const proj = await createProject(orgId, projectName);
-            projectId = proj.uuid;
-            projectsCreated++;
-            logMsg(`Created project: ${projectName}`, 'imp-ok');
-            await sleep(DELAY_MS);
-          } catch (err) {
-            logMsg(`Failed to create project "${projectName}": ${err.message}`, 'imp-err');
-            fileErrors += assignment.files.length;
-            fileIndex += assignment.files.length;
-            continue;
-          }
-        }
-
-        projectResults[projectName] = { total: assignment.files.length, uploaded: 0 };
-
-        for (const f of assignment.files) {
-          fileIndex++;
-          const pct = Math.round((fileIndex / totalFiles) * 100);
-          ui.bar.style.width = pct + '%';
-          ui.counter.textContent = `${fileIndex} / ${totalFiles} conversations`;
-          ui.current.textContent = `${projectName} / ${f.fileName}`;
-          ui.status.textContent = `Creating conversation in ${projectName}...`;
-
-          try {
-            const title = f.fileName.replace(/\.txt$/i, '');
-            const convId = await createConversation(orgId, title, projectId);
-            await sendMessage(orgId, convId, f.content);
-            filesUploaded++;
-            projectResults[projectName].uploaded++;
-          } catch (err) {
-            fileErrors++;
-            logMsg(`Error: ${f.fileName} — ${err.message}`, 'imp-err');
-          }
-
-          await sleep(DELAY_MS);
-        }
-      }
+    // Step 4: Pick a Claude Project to import into
+    ui.status.textContent = 'Loading projects...';
+    let projects = [];
+    try {
+      projects = await listProjects(orgId);
+    } catch (err) {
+      ui.status.textContent = 'Failed to list projects: ' + err.message;
+      logMsg(err.message, 'imp-err');
+      return;
+    }
+    if (projects.length === 0) {
+      ui.status.textContent = 'No projects found. Please create a project in Claude first.';
+      logMsg('No projects found — create one in Claude and re-run.', 'imp-err');
+      return;
     }
 
-    // Step 7: Show results
+    ui.progress.style.display = 'none';
+    ui.pick.style.display = 'block';
+    const chosenProject = await showPicker(
+      'Choose a project to import into:',
+      projects,
+      (p) => p.name
+    );
+    ui.pick.style.display = 'none';
+    ui.progress.style.display = 'block';
+
+    const projectId = chosenProject.uuid;
+    logMsg(`Target project: ${chosenProject.name}`, 'imp-ok');
+
+    // Step 5: Import every conversation into the chosen project
+    let filesUploaded = 0;
+    let fileErrors = 0;
+
+    for (let i = 0; i < allFiles.length; i++) {
+      const f = allFiles[i];
+      const pct = Math.round(((i + 1) / totalFiles) * 100);
+      ui.bar.style.width = pct + '%';
+      ui.counter.textContent = `${i + 1} / ${totalFiles} conversations`;
+      ui.current.textContent = f.fileName;
+      ui.status.textContent = `Creating conversation in ${chosenProject.name}...`;
+
+      try {
+        const title = f.fileName.replace(/\.txt$/i, '');
+        const convId = await createConversation(orgId, title, projectId);
+        await sendMessage(orgId, convId, f.content);
+        filesUploaded++;
+      } catch (err) {
+        fileErrors++;
+        logMsg(`Error: ${f.fileName} — ${err.message}`, 'imp-err');
+      }
+
+      await sleep(DELAY_MS);
+    }
+
+    // Step 6: Show results
     ui.progress.style.display = 'none';
     ui.done.style.display = 'block';
 
     const summary = document.getElementById('imp-summary');
     summary.innerHTML = `
-      ${projectsCreated > 0 ? `<strong>${projectsCreated}</strong> projects created<br>` : ''}
-      ${projectsReused > 0 ? `<span style="color:#fbbf24">${projectsReused} projects reused</span><br>` : ''}
       <strong>${filesUploaded}</strong> conversations imported
+      into <strong>${chosenProject.name}</strong>
       ${fileErrors > 0 ? `<br><span style="color:#f87171">${fileErrors} errors</span>` : ''}
     `;
 
-    const projList = document.getElementById('imp-projects-list');
-    if (Object.keys(projectResults).length > 0 && useProjects) {
-      projList.style.display = '';
-      projList.innerHTML = '<div style="font-weight:600;margin-bottom:0.5rem;color:#e0e0e0">Projects</div>';
-      for (const [name, result] of Object.entries(projectResults).sort((a, b) => a[0].localeCompare(b[0]))) {
-        projList.innerHTML += `<div class="imp-proj-item"><span>${result.uploaded}</span> / ${result.total} — ${name}</div>`;
-      }
-    } else {
-      projList.style.display = 'none';
-    }
+    document.getElementById('imp-projects-list').style.display = 'none';
 
-    console.log(`✅ Claude Import complete: ${projectsCreated} projects created, ${projectsReused} reused, ${filesUploaded} conversations created, ${fileErrors} errors`);
+    console.log(`✅ Claude Import complete: ${filesUploaded} conversations imported into "${chosenProject.name}", ${fileErrors} errors`);
   }
 
 })();

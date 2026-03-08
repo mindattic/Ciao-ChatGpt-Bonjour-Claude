@@ -268,12 +268,12 @@
     <div class="shot-counter">42 / 128 conversations</div>
     <div class="shot-bar-bg"><div class="shot-bar-fill exp-bar" style="width:33%;"></div></div>
     <div class="shot-status">Fetching conversation 42 of 128…</div>
-    <div class="shot-current">Work Projects / Refactor auth module</div>
+    <div class="shot-current">Refactor auth module</div>
     <div class="shot-log">
       <div class="ok">✓ Loaded conversation list (128 items)</div>
-      <div>Exporting: No Project / Quick question</div>
-      <div>Exporting: Work Projects / Refactor auth module</div>
-      <div class="warn">No messages: Work Projects / empty-test</div>
+      <div>Exporting: Quick question</div>
+      <div>Exporting: Refactor auth module</div>
+      <div class="warn">No messages: empty-test</div>
     </div>
   </div>
 </div>
@@ -284,12 +284,8 @@
   <div class="shot-inner">
     <h2 class="exp-accent" style="font-size:1.4rem;">Export Complete!</h2>
     <div class="shot-bar-bg"><div class="shot-bar-fill exp-bar" style="width:100%;"></div></div>
-    <div class="shot-status"><strong>126</strong> conversations exported<br><span style="color:#fbbf24;">2 errors</span><br><br><strong>Projects:</strong></div>
-    <div class="shot-current" style="white-space:pre;text-align:left;">  47 — Work Projects
-  31 — Side Projects
-  28 — No Project
-  12 — Custom GPT (g-abc123…)
-   8 — Research</div>
+    <div class="shot-status"><strong>126</strong> conversations exported<br><span style="color:#fbbf24;">2 errors</span></div>
+    <div class="shot-current" style="white-space:pre;text-align:left;"></div>
     <div style="margin-top:1.2rem;"><span class="shot-btn exp-btn">Close</span></div>
   </div>
 </div>
@@ -300,10 +296,9 @@
   <li><strong>Authentication</strong> — Retrieves your session access token by calling <code>/api/auth/session</code>. The token is sent as a <code>Bearer</code> token in the <code>Authorization</code> header for all subsequent requests.</li>
   <li><strong>Discovery</strong> — Paginates through <code>/backend-api/conversations</code> (100 conversations per page, ordered by <code>updated</code>) to build a complete list of every conversation in your account.</li>
   <li><strong>Project Scan</strong> — Fetches all ChatGPT Projects via <code>/backend-api/projects</code> and, for each project, paginates through <code>/backend-api/conversations?project_id={id}</code>. Any conversations not already seen are merged into the main list. This catches conversations hidden behind the sidebar’s “Show more” ellipsis.</li>
-  <li><strong>GPT Name Resolution</strong> — Collects all unique <code>gizmo_id</code> values (Custom GPTs) and batch-resolves their display names via <code>/backend-api/gizmos/{gizmo_id}</code>. Names are cached so each GPT is only fetched once. If a lookup fails, the folder falls back to <code>Custom GPT ({id})</code>.</li>
   <li><strong>Fetch</strong> — For each conversation, fetches the full message tree from <code>/backend-api/conversation/{id}</code>.</li>
   <li><strong>Extract</strong> — Walks the message tree using a depth-first traversal (iterative stack). Each node's <code>message.content.parts</code> array is joined into plain text. Messages are labelled by role (<code>You</code>, <code>ChatGPT</code>, <code>System</code>, <code>Tool</code>).</li>
-  <li><strong>Package</strong> — Writes each conversation as a <code>.txt</code> file inside a zip archive using a built-in pure-JavaScript zip writer (STORE method, no compression). Files are organized into folders by project/workspace name.</li>
+  <li><strong>Package</strong> — Writes each conversation as a <code>.txt</code> file inside a zip archive using a built-in pure-JavaScript zip writer (STORE method, no compression). All files are stored flat (no folder nesting).</li>
   <li><strong>Download</strong> — Generates the zip blob in-browser and triggers an automatic download.</li>
 </ol>
 
@@ -316,7 +311,6 @@
     <tr><td><code>/backend-api/projects?offset={n}&amp;limit=100&amp;order=most_recent</code></td><td>GET</td><td>Discover all ChatGPT Projects</td></tr>
     <tr><td><code>/backend-api/conversations?project_id={id}&amp;offset={n}&amp;limit=100</code></td><td>GET</td><td>Paginate conversations inside a specific project</td></tr>
     <tr><td><code>/backend-api/conversation/{id}</code></td><td>GET</td><td>Fetch the full message tree for a single conversation</td></tr>
-    <tr><td><code>/backend-api/gizmos/{gizmo_id}</code></td><td>GET</td><td>Resolve a Custom GPT's display name from its gizmo ID</td></tr>
   </tbody>
 </table>
 
@@ -328,16 +322,6 @@
     <tr><td><code>BASE</code></td><td><code>/backend-api</code></td><td>Base path for ChatGPT backend API calls.</td></tr>
   </tbody>
 </table>
-
-<h3 id="export-project">Project / Folder Detection</h3>
-<p>Each conversation is placed into a folder determined by the following priority:</p>
-<ol>
-  <li><code>conv.project</code> — if the conversation has a <code>project</code> object (including those enriched during the project scan), its <code>.name</code> or <code>.title</code> is used.</li>
-  <li><code>conv.workspace</code> — same logic as above, checked as a fallback.</li>
-  <li><code>conv.project_id</code> — if the conversation carries a <code>project_id</code> field, the display name resolved during the project scan is used.</li>
-  <li><code>conv.gizmo_id</code> — if the conversation was with a Custom GPT, the script looks up the GPT's display name via <code>/backend-api/gizmos/{gizmo_id}</code> (resolved and cached before the export loop). If the lookup fails, the folder is named <code>Custom GPT ({first 12 chars of gizmo_id})</code>.</li>
-  <li><strong>Fallback</strong> — conversations that match none of the above go into a <code>No Project</code> folder.</li>
-</ol>
 
 <h3 id="export-format">Conversation Format</h3>
 <p>Each <code>.txt</code> file is formatted as:</p>
@@ -369,10 +353,10 @@ Assistant response text
 </table>
 
 <h3 id="export-dupes">Duplicate Filename Handling</h3>
-<p>If two conversations in the same project have the same title, subsequent files get a numeric suffix:</p>
-<pre><code>My Project/Some Title.txt
-My Project/Some Title (1).txt
-My Project/Some Title (2).txt</code></pre>
+<p>If two conversations have the same title, subsequent files get a numeric suffix:</p>
+<pre><code>Some Title.txt
+Some Title (1).txt
+Some Title (2).txt</code></pre>
 <p>File and folder names are sanitized: characters <code>&lt; &gt; : " / \ | ? *</code> are replaced with <code>_</code>, leading/trailing dots are stripped, and names are truncated to 100 characters.</p>
 
 <h3 id="export-zip">Built-in Zip Writer</h3>
@@ -403,11 +387,11 @@ My Project/Some Title (2).txt</code></pre>
   <li>Copy the entire contents of <strong><code>ClaudeConversationImporter.js</code></strong>.</li>
   <li><strong>Paste</strong> it into the console and press <strong>Enter</strong>.</li>
   <li>An overlay will appear. Click <strong>Minimize &amp; Capture</strong>, then <strong>send any message</strong> in Claude's chat. This lets the script capture your session's auth headers.</li>
-  <li>The overlay reappears with a file picker and an <strong>Organize into Projects</strong> checkbox (checked by default). Uncheck it to import all conversations flat into the root without creating any projects.</li>
-  <li>Select your <code>chatgpt_export_YYYY-MM-DD.zip</code> file from Step 1.</li>
+  <li>The overlay reappears with a file picker — select your <code>chatgpt_export_YYYY-MM-DD.zip</code> file.</li>
   <li>If you belong to multiple Claude organizations (e.g., Free + Team), a picker appears — <strong>choose your org</strong>.</li>
-  <li>The script imports conversations. In <strong>project mode</strong> it creates one Claude Project per export folder (merging small folders into <em>Miscellaneous</em> when slots are limited). In <strong>root mode</strong> it imports every conversation without any project structure.</li>
-  <li>When finished, a summary screen shows projects created, conversations imported, and errors. Click <strong>Close</strong> to dismiss.</li>
+  <li>A project picker appears — <strong>choose the Claude Project</strong> to import into. (Create one in Claude first if you haven’t already.)</li>
+  <li>The script imports every conversation as a new chat inside the chosen project.</li>
+  <li>When finished, a summary screen shows conversations imported and errors. Click <strong>Close</strong> to dismiss.</li>
 </ol>
 
 <!-- ── SCREENSHOT: Importer — file select ────────────────── -->
@@ -415,11 +399,10 @@ My Project/Some Title (2).txt</code></pre>
   <span class="screenshot-label">UI Preview — Importer (file select)</span>
   <div class="shot-inner">
     <h2 class="imp-accent" style="font-size:1.35rem;">Claude Conversation Importer</h2>
-    <div class="shot-subtitle">Import ChatGPT conversations into Claude Projects</div>
+    <div class="shot-subtitle">Import ChatGPT conversations into a Claude Project</div>
     <div class="imp-file-hint">
       Select your <code>chatgpt_export.zip</code> file.<br>
-      Each folder becomes a Claude Project, and each conversation<br>
-      is uploaded as a knowledge document.
+      You will then choose a Claude Project to import all conversations into.
     </div>
     <span class="shot-btn imp-btn">Select Zip File</span>
   </div>
@@ -430,7 +413,7 @@ My Project/Some Title (2).txt</code></pre>
   <span class="screenshot-label">UI Preview — Importer (in-progress)</span>
   <div class="shot-inner">
     <h2 class="imp-accent" style="font-size:1.35rem;">Claude Conversation Importer</h2>
-    <div class="shot-subtitle">Import ChatGPT conversations into Claude Projects</div>
+    <div class="shot-subtitle">Import ChatGPT conversations into a Claude Project</div>
     <div class="shot-counter">18 / 126 files</div>
     <div class="shot-bar-bg"><div class="shot-bar-fill imp-bar" style="width:14%;"></div></div>
     <div class="shot-status">Uploading to Work Projects…</div>
@@ -450,22 +433,13 @@ My Project/Some Title (2).txt</code></pre>
   <span class="screenshot-label">UI Preview — Importer (complete)</span>
   <div class="shot-inner">
     <h2 class="imp-accent" style="font-size:1.35rem;">Claude Conversation Importer</h2>
-    <div class="shot-subtitle">Import ChatGPT conversations into Claude Projects</div>
+    <div class="shot-subtitle">Import ChatGPT conversations into a Claude Project</div>
     <div class="shot-done-check">&#10003;</div>
     <div class="shot-done-title">Import Complete!</div>
     <div class="shot-summary">
-      <strong>4</strong> projects created<br>
-      <span style="color:#fbbf24;">1 project already existed (reused)</span><br>
-      <strong>124</strong> conversations uploaded<br>
+      <strong>124</strong> conversations imported<br>
+      into <strong>My Import Project</strong><br>
       <span style="color:#f87171;">2 errors</span>
-    </div>
-    <div class="shot-projects-list">
-      <div style="font-weight:600;margin-bottom:.4rem;color:#e0e0e0;">Projects</div>
-      <div class="shot-proj-item"><span>47</span> / 47 — Work Projects</div>
-      <div class="shot-proj-item"><span>31</span> / 31 — Side Projects</div>
-      <div class="shot-proj-item"><span>26</span> / 28 — No Project</div>
-      <div class="shot-proj-item"><span>12</span> / 12 — ChatGPT Writer</div>
-      <div class="shot-proj-item"><span>8</span> / 8 — Research</div>
     </div>
     <div style="margin-top:1.2rem;"><span class="shot-btn imp-btn-close">Close</span></div>
   </div>
@@ -475,14 +449,12 @@ My Project/Some Title (2).txt</code></pre>
 <ol>
   <li><strong>URL Check</strong> — Verifies the script is running on <code>claude.ai</code>. If the hostname does not match, an alert is shown and the script exits immediately.</li>
   <li><strong>Auth Capture</strong> — The overlay minimizes and the script intercepts <code>window.fetch</code> to capture auth headers and the active model name from the next Claude API call the user triggers (e.g., sending a message). These headers are replayed via un-patched native <code>fetch</code> (obtained from a hidden iframe) for all subsequent API calls.</li>
-  <li><strong>File Selection &amp; Mode</strong> — Presents a styled file picker (<code>&lt;input type="file" accept=".zip"&gt;</code>) and an <strong>Organize into Projects</strong> checkbox. When checked (default), conversations are organized into Claude Projects matching the export folders. When unchecked, all conversations are imported to the root without creating any projects.</li>
-  <li><strong>Parse &amp; Group</strong> — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). Files are grouped by their top-level folder (matching the ChatGPT project/workspace they came from). See <a href="#import-zip">Built-in Zip Reader</a>.</li>
+  <li><strong>File Selection</strong> — Presents a styled file picker (<code>&lt;input type="file" accept=".zip"&gt;</code>).</li>
+  <li><strong>Parse</strong> — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). All <code>.txt</code> files are extracted into a flat list regardless of any folder structure in the zip. See <a href="#import-zip">Built-in Zip Reader</a>.</li>
   <li><strong>Organization Picker</strong> — Fetches all Claude organizations from <code>/api/organizations</code>. If you belong to multiple orgs (e.g., personal Free plan + a Team workspace), a picker lets you choose which one. Single-org accounts skip this step.</li>
-  <li><strong>Slot Planning</strong> <em>(project mode only)</em> — Lists existing Claude Projects to determine how many of the 10 project slots are available. If a folder name matches an existing project (case-insensitive), that project is reused.</li>
-  <li><strong>Smart Merging</strong> <em>(project mode only)</em> — If there are more new folders than available slots, the largest folders get their own projects and the smallest are merged into a single <em>Miscellaneous</em> project with bracket-prefixed filenames.</li>
-  <li><strong>Create Projects</strong> <em>(project mode only)</em> — New projects are created via <code>POST /api/organizations/{orgId}/projects</code> with <code>is_private: true</code>.</li>
-  <li><strong>Create Conversations</strong> — For each <code>.txt</code> file, a new chat conversation is created via <code>POST /api/organizations/{orgId}/chat_conversations</code> with the conversation title and optionally a <code>project_uuid</code>. The conversation content is then sent as the first message via the streaming completion endpoint, and the response is drained so the server commits the conversation.</li>
-  <li><strong>Summary</strong> — Displays a completion screen with counts of projects created (if applicable), conversations imported, and errors.</li>
+  <li><strong>Project Picker</strong> — Lists your existing Claude Projects and presents a picker. All conversations will be imported into the chosen project.</li>
+  <li><strong>Create Conversations</strong> — For each <code>.txt</code> file, a new chat conversation is created via <code>POST /api/organizations/{orgId}/chat_conversations</code> with the conversation title and <code>project_uuid</code>. The conversation content is then sent as the first message via the streaming completion endpoint, and the response is drained so the server commits the conversation.</li>
+  <li><strong>Summary</strong> — Displays a completion screen with conversations imported and errors.</li>
 </ol>
 
 <blockquote>
@@ -493,9 +465,8 @@ My Project/Some Title (2).txt</code></pre>
 <table>
   <thead><tr><th>Endpoint</th><th>Method</th><th>Purpose</th></tr></thead>
   <tbody>
-    <tr><td><code>/api/organizations</code></td><td>GET</td><td>Retrieve the current user's organization UUID</td></tr>
-    <tr><td><code>/api/organizations/{orgId}/projects</code></td><td>GET</td><td>List existing projects (for slot counting and duplicate detection)</td></tr>
-    <tr><td><code>/api/organizations/{orgId}/projects</code></td><td>POST</td><td>Create a new project (<code>name</code>, <code>description</code>, <code>is_private</code>)</td></tr>
+    <tr><td><code>/api/organizations</code></td><td>GET</td><td>Retrieve the current user’s organization UUID</td></tr>
+    <tr><td><code>/api/organizations/{orgId}/projects</code></td><td>GET</td><td>List existing projects (for project picker)</td></tr>
     <tr><td><code>/api/organizations/{orgId}/chat_conversations</code></td><td>POST</td><td>Create a new chat conversation (<code>uuid</code>, <code>name</code>, <code>project_uuid</code>)</td></tr>
     <tr><td><code>/api/organizations/{orgId}/chat_conversations/{convId}/completion</code></td><td>POST</td><td>Send a message to a conversation (streaming response)</td></tr>
   </tbody>
@@ -521,14 +492,6 @@ My Project/Some Title (2).txt</code></pre>
 <blockquote>
   <p><strong>Note:</strong> The exporter generates STORE-method (uncompressed) zips for maximum compatibility. The importer also handles DEFLATE-compressed zips produced by other tools. Directories and zero-length entries are skipped.</p>
 </blockquote>
-
-<h3 id="import-dupes">Duplicate Project Handling</h3>
-<p>Before creating any projects, the importer fetches the full list of existing Claude Projects and builds a case-insensitive lookup map. If a project with a matching name already exists:</p>
-<ul>
-  <li>The existing project's UUID is reused.</li>
-  <li>A warning is logged: <code>Project exists, reusing: {name}</code>.</li>
-  <li>Conversation documents are uploaded into the existing project alongside any prior content.</li>
-</ul>
 
 <hr>
 
@@ -557,7 +520,7 @@ My Project/Some Title (2).txt</code></pre>
   <li><strong>Progress bar</strong> — Animated fill from 0 % to 100 % as conversations are processed.</li>
   <li><strong>Counter</strong> — <code>{current} / {total} conversations</code>.</li>
   <li><strong>Status line</strong> — Current operation description.</li>
-  <li><strong>Current item</strong> — Monospace display of <code>{project} / {title}</code> being exported.</li>
+  <li><strong>Current item</strong> — Monospace display of the conversation title being exported.</li>
   <li><strong>Log panel</strong> — Scrollable panel showing warnings (yellow) and errors (red).</li>
   <li><strong>Close button</strong> — Appears after export completes.</li>
 </ul>
@@ -566,8 +529,10 @@ My Project/Some Title (2).txt</code></pre>
 <ul>
   <li><strong>Header</strong> — "Claude Conversation Importer" with a warm brown/copper gradient.</li>
   <li><strong>File selection view</strong> — A styled button to trigger the file picker.</li>
+  <li><strong>Organization picker</strong> — Buttons for each Claude org (shown only for multi-org accounts).</li>
+  <li><strong>Project picker</strong> — Buttons for each existing Claude Project.</li>
   <li><strong>Progress view</strong> — Same layout as the exporter (counter, progress bar, status, log).</li>
-  <li><strong>Completion view</strong> — Checkmark icon, summary statistics, per-project breakdown, and a <strong>Close</strong> button.</li>
+  <li><strong>Completion view</strong> — Checkmark icon, summary statistics, and a <strong>Close</strong> button.</li>
 </ul>
 
 <hr>
@@ -584,7 +549,6 @@ My Project/Some Title (2).txt</code></pre>
     <tr><td><strong>Zip compression</strong></td><td>The exporter generates STORE (uncompressed) zips. The importer supports both STORE and DEFLATE. Other compression methods are not supported.</td></tr>
     <tr><td><strong>Browser tab</strong></td><td>The export/import tab must remain open and in the foreground for the full duration of the operation.</td></tr>
     <tr><td><strong>Session expiry</strong></td><td>Long-running exports (thousands of conversations) may encounter session token expiration. Re-run the script if this happens.</td></tr>
-    <tr><td><strong>Custom GPTs</strong></td><td>Conversations with Custom GPTs are grouped by <code>gizmo_id</code>, which produces folder names like <code>Custom GPT (g-abc123…)</code> rather than the GPT's display name.</td></tr>
     <tr><td><strong>Message types</strong></td><td>Only text content is extracted. Images, file attachments, and DALL-E generations are not included.</td></tr>
   </tbody>
 </table>
