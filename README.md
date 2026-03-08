@@ -63,11 +63,12 @@ Both scripts work the same way: open **F12 → Console**, paste the script, hit 
 1. **URL Check** — Verifies the script is running on `chatgpt.com`. If the hostname does not match, an alert is shown and the script exits immediately.
 2. **Authentication** — Retrieves your session access token by calling `/api/auth/session`. The token is sent as a `Bearer` token in the `Authorization` header for all subsequent requests.
 3. **Discovery** — Paginates through `/backend-api/conversations` (100 conversations per page, ordered by `updated`) to build a complete list of every conversation in your account.
-4. **GPT Name Resolution** — Collects all unique `gizmo_id` values (Custom GPTs) and batch-resolves their display names via `/backend-api/gizmos/{gizmo_id}`. Names are cached so each GPT is only fetched once. If a lookup fails, the folder falls back to `Custom GPT ({id})`.
-5. **Fetch** — For each conversation, fetches the full message tree from `/backend-api/conversation/{id}`.
-6. **Extract** — Walks the message tree using a depth-first traversal (iterative stack). Each node's `message.content.parts` array is joined into plain text. Messages are labelled by role (`You`, `ChatGPT`, `System`, `Tool`).
-7. **Package** — Writes each conversation as a `.txt` file inside a zip archive using a built-in pure-JavaScript zip writer (STORE method, no compression). Files are organized into folders by project/workspace name.
-8. **Download** — Generates the zip blob in-browser and triggers an automatic download.
+4. **Project Scan** — Fetches all ChatGPT Projects via `/backend-api/projects` and, for each project, paginates through `/backend-api/conversations?project_id={id}`. Any conversations not already seen are merged into the main list. This catches conversations hidden behind the sidebar’s “Show more” ellipsis.
+5. **GPT Name Resolution** — Collects all unique `gizmo_id` values (Custom GPTs) and batch-resolves their display names via `/backend-api/gizmos/{gizmo_id}`. Names are cached so each GPT is only fetched once. If a lookup fails, the folder falls back to `Custom GPT ({id})`.
+6. **Fetch** — For each conversation, fetches the full message tree from `/backend-api/conversation/{id}`.
+7. **Extract** — Walks the message tree using a depth-first traversal (iterative stack). Each node's `message.content.parts` array is joined into plain text. Messages are labelled by role (`You`, `ChatGPT`, `System`, `Tool`).
+8. **Package** — Writes each conversation as a `.txt` file inside a zip archive using a built-in pure-JavaScript zip writer (STORE method, no compression). Files are organized into folders by project/workspace name.
+9. **Download** — Generates the zip blob in-browser and triggers an automatic download.
 
 ### ChatGPT API Endpoints Used
 
@@ -75,6 +76,8 @@ Both scripts work the same way: open **F12 → Console**, paste the script, hit 
 |----------|--------|---------|
 | `/api/auth/session` | GET | Retrieve the current session access token |
 | `/backend-api/conversations?offset={n}&limit=100&order=updated` | GET | Paginate through the conversation list |
+| `/backend-api/projects?offset={n}&limit=100&order=most_recent` | GET | Discover all ChatGPT Projects |
+| `/backend-api/conversations?project_id={id}&offset={n}&limit=100` | GET | Paginate conversations inside a specific project |
 | `/backend-api/conversation/{id}` | GET | Fetch the full message tree for a single conversation |
 | `/backend-api/gizmos/{gizmo_id}` | GET | Resolve a Custom GPT's display name from its gizmo ID |
 
@@ -89,10 +92,11 @@ Both scripts work the same way: open **F12 → Console**, paste the script, hit 
 
 Each conversation is placed into a folder determined by the following priority:
 
-1. `conv.project` — if the conversation has a `project` object, its `.name` or `.title` is used.
+1. `conv.project` — if the conversation has a `project` object (including those enriched during the project scan), its `.name` or `.title` is used.
 2. `conv.workspace` — same logic as above, checked as a fallback.
-3. `conv.gizmo_id` — if the conversation was with a Custom GPT, the script looks up the GPT's display name via `/backend-api/gizmos/{gizmo_id}` (resolved and cached before the export loop). If the lookup fails, the folder is named `Custom GPT ({first 12 chars of gizmo_id})`.
-4. **Fallback** — conversations that match none of the above go into a `No Project` folder.
+3. `conv.project_id` — if the conversation carries a `project_id` field, the display name resolved during the project scan is used.
+4. `conv.gizmo_id` — if the conversation was with a Custom GPT, the script looks up the GPT's display name via `/backend-api/gizmos/{gizmo_id}` (resolved and cached before the export loop). If the lookup fails, the folder is named `Custom GPT ({first 12 chars of gizmo_id})`.
+5. **Fallback** — conversations that match none of the above go into a `No Project` folder.
 
 ### Conversation Format
 

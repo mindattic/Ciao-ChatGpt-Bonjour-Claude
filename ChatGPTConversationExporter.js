@@ -165,6 +165,79 @@
     return;
   }
 
+  // ─── SCAN CHATGPT PROJECTS ────────────────────────────────
+  // Conversations inside ChatGPT Projects are not returned by
+  // the main /conversations endpoint.  Discover every project
+  // and pull their conversations so nothing is missed.
+  ui.status.textContent = 'Scanning ChatGPT projects...';
+  const seenIds = new Set(allConvs.map(c => c.id));
+  const projectNameById = {};  // project ID → display name
+
+  try {
+    let allProjects = [];
+    let pOffset = 0;
+    while (true) {
+      const resp = await fetch(
+        `${BASE}/projects?offset=${pOffset}&limit=100&order=most_recent`,
+        { headers: hdrs }
+      );
+      if (!resp.ok) break;
+      const data = await resp.json();
+      const items = data.items || [];
+      if (items.length === 0) break;
+      allProjects = allProjects.concat(items);
+      if (allProjects.length >= (data.total || Infinity)) break;
+      pOffset += 100;
+      await sleep(DELAY_MS);
+    }
+
+    if (allProjects.length > 0) {
+      logMsg(`Found ${allProjects.length} ChatGPT projects`);
+      for (const proj of allProjects) {
+        const pid = proj.id;
+        if (!pid) continue;
+        const pname = proj.name || proj.title || `Project (${pid.slice(0, 12)})`;
+        projectNameById[pid] = pname;
+
+        let cOffset = 0;
+        let added = 0;
+        while (true) {
+          const resp = await fetch(
+            `${BASE}/conversations?project_id=${pid}&offset=${cOffset}&limit=${limit}&order=updated`,
+            { headers: hdrs }
+          );
+          if (!resp.ok) break;
+          const data = await resp.json();
+          const items = data.items || [];
+          if (items.length === 0) break;
+
+          for (const conv of items) {
+            if (conv.id && !seenIds.has(conv.id)) {
+              if (!conv.project) conv.project = { name: pname, id: pid };
+              allConvs.push(conv);
+              seenIds.add(conv.id);
+              added++;
+            }
+          }
+          if (items.length < limit) break;
+          cOffset += limit;
+          await sleep(DELAY_MS);
+        }
+        if (added > 0) logMsg(`  ${pname}: +${added} conversations`);
+        await sleep(DELAY_MS);
+      }
+    }
+  } catch (e) {
+    logMsg(`Project scan: ${e.message}`, 'cgpt-exp-warn');
+  }
+
+  // Enrich conversations that have a project_id but no project name
+  for (const conv of allConvs) {
+    if (!conv.project && conv.project_id && projectNameById[conv.project_id]) {
+      conv.project = { name: projectNameById[conv.project_id], id: conv.project_id };
+    }
+  }
+
   const total = allConvs.length;
   ui.counter.textContent = `0 / ${total} conversations`;
   ui.status.textContent = `Found ${total} conversations. Starting export...`;
@@ -302,6 +375,7 @@
         if (typeof val === 'string') return val;
       }
     }
+    if (conv.project_id && projectNameById[conv.project_id]) return projectNameById[conv.project_id];
     if (conv.gizmo_id && gptNameCache[conv.gizmo_id]) return gptNameCache[conv.gizmo_id];
     if (conv.gizmo_id) return `Custom GPT (${conv.gizmo_id.slice(0, 12)})`;
     return 'No Project';
@@ -449,7 +523,7 @@
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `chatgpt_export_${new Date().toISOString().slice(0,10)}.zip`;
+  a.download = `chatgpt_export_${new Date().toISOString().slice(0,19).replace(/[T:]/g, '-')}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
