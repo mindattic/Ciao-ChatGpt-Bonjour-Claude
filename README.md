@@ -1,6 +1,8 @@
 # ChatGPT to Claude
 
-Migrate **all** your ChatGPT conversations into Claude Projects with two browser-console scripts — no API keys, no extensions, no external tools.
+Migrate **all** your ChatGPT conversations into Claude with two browser-console scripts — no API keys, no extensions, no external tools.
+
+> **Note:** Conversations are exported as a **flat zip** of `.txt` files — ChatGPT project/folder structure is **not preserved**. The importer places every conversation into a **single Claude Project** of your choosing.
 
 | Step | Script | Where to run | What it does |
 |------|--------|--------------|--------------|
@@ -125,7 +127,7 @@ Some Title (1).txt
 Some Title (2).txt
 ```
 
-File and folder names are sanitized: characters `< > : " / \ | ? *` are replaced with `_`, leading/trailing dots are stripped, and names are truncated to 100 characters.
+Filenames are sanitized: characters `< > : " / \ | ? *` are replaced with `_`, leading/trailing dots are stripped, and names are truncated to 100 characters.
 
 ### Built-in Zip Writer
 
@@ -238,6 +240,7 @@ Both scripts render a full-screen overlay with a dark theme (`rgba(0,0,0,0.85)` 
 | Area | Detail |
 |------|--------|
 | **Rate limiting** | Both scripts use a fixed delay between API calls (`DELAY_MS`). If you hit rate limits, increase the value. |
+| **Project structure** | ChatGPT project/folder organization is **not preserved**. All conversations are exported as flat `.txt` files and imported into a single Claude Project. |
 | **Conversation size** | Very large conversations may approach Claude's knowledge document size limits. |
 | **Zip compression** | The exporter generates STORE (uncompressed) zips. The importer supports both STORE and DEFLATE. Other compression methods are not supported. |
 | **Browser tab** | The export/import tab must remain open and in the foreground for the full duration of the operation. |

@@ -169,13 +169,16 @@
 <!--  HEADER                                                    -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h1 id="top">ChatGPT to Claude</h1>
-<p>Migrate <strong>all</strong> your ChatGPT conversations into Claude Projects with two browser-console scripts — no API keys, no extensions, no external tools.</p>
+<p>Migrate <strong>all</strong> your ChatGPT conversations into Claude with two browser-console scripts — no API keys, no extensions, no external tools.</p>
+<blockquote>
+  <p><strong>Note:</strong> Conversations are exported as a <strong>flat zip</strong> of <code>.txt</code> files — ChatGPT project/folder structure is <strong>not preserved</strong>. The importer places every conversation into a <strong>single Claude Project</strong> of your choosing.</p>
+</blockquote>
 
 <table>
   <thead><tr><th>Step</th><th>Script</th><th>Where to run</th><th>What it does</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td><code>ChatGPTConversationExporter.js</code></td><td>chatgpt.com</td><td>Exports every conversation as a <code>.txt</code> inside a <code>.zip</code>, organized by project folder.</td></tr>
-    <tr><td>2</td><td><code>ClaudeConversationImporter.js</code></td><td>claude.ai</td><td>Reads the <code>.zip</code>, creates matching Claude Projects, and imports each conversation as a new Claude chat.</td></tr>
+    <tr><td>1</td><td><code>ChatGPTConversationExporter.js</code></td><td>chatgpt.com</td><td>Exports every conversation as a <code>.txt</code> inside a flat <code>.zip</code> (no folder nesting).</td></tr>
+    <tr><td>2</td><td><code>ClaudeConversationImporter.js</code></td><td>claude.ai</td><td>Reads the <code>.zip</code>, lets you pick a Claude Project, and imports each conversation as a new Claude chat.</td></tr>
   </tbody>
 </table>
 
@@ -205,7 +208,6 @@
         <li><a href="#export-how">How It Works</a></li>
         <li><a href="#export-endpoints">ChatGPT API Endpoints Used</a></li>
         <li><a href="#export-config">Configuration</a></li>
-        <li><a href="#export-project">Project / Folder Detection</a></li>
         <li><a href="#export-format">Conversation Format</a></li>
         <li><a href="#export-dupes">Duplicate Filename Handling</a></li>
         <li><a href="#export-zip">Built-in Zip Writer</a></li>
@@ -218,7 +220,6 @@
         <li><a href="#import-endpoints">Claude API Endpoints Used</a></li>
         <li><a href="#import-config">Configuration</a></li>
         <li><a href="#import-zip">Built-in Zip Reader</a></li>
-        <li><a href="#import-dupes">Duplicate Project Handling</a></li>
       </ul>
     </li>
     <li><a href="#privacy">Privacy &amp; Security</a></li>
@@ -357,7 +358,7 @@ Assistant response text
 <pre><code>Some Title.txt
 Some Title (1).txt
 Some Title (2).txt</code></pre>
-<p>File and folder names are sanitized: characters <code>&lt; &gt; : " / \ | ? *</code> are replaced with <code>_</code>, leading/trailing dots are stripped, and names are truncated to 100 characters.</p>
+<p>Filenames are sanitized: characters <code>&lt; &gt; : " / \ | ? *</code> are replaced with <code>_</code>, leading/trailing dots are stripped, and names are truncated to 100 characters.</p>
 
 <h3 id="export-zip">Built-in Zip Writer</h3>
 <p>The exporter includes a minimal, dependency-free zip writer implemented in pure JavaScript. It builds a valid ZIP archive using the STORE method (no compression):</p>
@@ -416,14 +417,13 @@ Some Title (2).txt</code></pre>
     <div class="shot-subtitle">Import ChatGPT conversations into a Claude Project</div>
     <div class="shot-counter">18 / 126 files</div>
     <div class="shot-bar-bg"><div class="shot-bar-fill imp-bar" style="width:14%;"></div></div>
-    <div class="shot-status">Uploading to Work Projects…</div>
-    <div class="shot-current">Work Projects / Refactor auth module.txt</div>
+    <div class="shot-status">Creating conversation in My Import Project…</div>
+    <div class="shot-current">Refactor auth module.txt</div>
     <div class="shot-log">
       <div class="ok">Found 126 files in zip</div>
-      <div class="ok">Found 5 projects with 126 total conversations</div>
-      <div class="ok">Organization ID: a1b2c3d4…</div>
-      <div class="ok">Created project: Work Projects</div>
-      <div class="warn">Project exists, reusing: No Project</div>
+      <div class="ok">126 conversations to import</div>
+      <div class="ok">Organization: Personal (a1b2c3d4…)</div>
+      <div class="ok">Target project: My Import Project</div>
     </div>
   </div>
 </div>
@@ -545,6 +545,8 @@ Some Title (2).txt</code></pre>
   <thead><tr><th>Area</th><th>Detail</th></tr></thead>
   <tbody>
     <tr><td><strong>Rate limiting</strong></td><td>Both scripts use a fixed delay between API calls (<code>DELAY_MS</code>). If you hit rate limits, increase the value.</td></tr>
+
+    <tr><td><strong>Project structure</strong></td><td>ChatGPT project/folder organization is <strong>not preserved</strong>. All conversations are exported as flat <code>.txt</code> files and imported into a single Claude Project.</td></tr>
     <tr><td><strong>Conversation size</strong></td><td>Very large conversations may approach Claude's knowledge document size limits.</td></tr>
     <tr><td><strong>Zip compression</strong></td><td>The exporter generates STORE (uncompressed) zips. The importer supports both STORE and DEFLATE. Other compression methods are not supported.</td></tr>
     <tr><td><strong>Browser tab</strong></td><td>The export/import tab must remain open and in the foreground for the full duration of the operation.</td></tr>

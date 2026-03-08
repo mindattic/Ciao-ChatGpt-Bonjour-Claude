@@ -12,6 +12,9 @@
 //  6. All conversations become new chats in that project
 // ============================================================
 
+// Clean up any previous run
+void document.getElementById('claude-importer-overlay')?.remove();
+
 (async function () {
   'use strict';
 
@@ -142,6 +145,7 @@
         <div id="imp-projects-list"></div>
         <button class="imp-btn-close" id="imp-close-btn">Close</button>
       </div>
+      <div style="margin-top:1rem;font-size:0.55rem;color:#666;text-align:center;">Last Updated: 2025-07-12T03:42:00Z</div>
     </div>
   `;
   document.body.appendChild(overlay);
@@ -489,10 +493,10 @@
       }
       // Use the leaf filename (strip any folder prefix from the zip)
       const parts = zf.name.split('/');
-      const fileName = parts[parts.length - 1];
-      if (!fileName) continue;
+      const leafName = parts[parts.length - 1];
+      if (!leafName) continue;
       const content = new TextDecoder().decode(decompressed);
-      allFiles.push({ fileName, content });
+      allFiles.push({ fileName: leafName, content });
     }
 
     const totalFiles = allFiles.length;

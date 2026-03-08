@@ -7,6 +7,9 @@
 //  4. It will export all conversations as .txt files in a .zip
 // ============================================================
 
+// Clean up any previous run
+void document.getElementById('cgpt-exporter-overlay')?.remove();
+
 (async function() {
   'use strict';
 
@@ -75,6 +78,7 @@
       <div id="cgpt-exp-status">Fetching conversation list...</div>
       <div id="cgpt-exp-current">&nbsp;</div>
       <div id="cgpt-exp-log"></div>
+      <div style="margin-top:1rem;font-size:0.55rem;color:#666;text-align:center;">Last Updated: 2025-07-12T03:42:00Z</div>
     </div>
   `;
   document.body.appendChild(overlay);
@@ -87,11 +91,11 @@
     log: document.getElementById('cgpt-exp-log'),
   };
 
-  function updateUI(current, total, project, title) {
+  function updateUI(current, total, title) {
     const pct = Math.round((current / total) * 100);
     ui.counter.textContent = `${current} / ${total} conversations`;
     ui.bar.style.width = pct + '%';
-    ui.current.textContent = `${project} / ${title}`;
+    ui.current.textContent = title;
   }
 
   function logMsg(msg, cls = '') {
@@ -404,7 +408,7 @@
     }
     usedPaths.add(filePath);
 
-    updateUI(i + 1, total, '', safeTitle);
+    updateUI(i + 1, total, safeTitle);
 
     try {
       const resp = await fetch(`${BASE}/conversation/${cid}`, { headers: hdrs });
