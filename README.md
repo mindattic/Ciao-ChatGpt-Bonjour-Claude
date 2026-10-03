@@ -1,96 +1,98 @@
-# ChatGPT to Claude
+# Ciao-ChatGpt-Bonjour-Claude
 
-Migrate **all** your ChatGPT conversations into Claude with two browser-console scripts — no API keys, no extensions, no external tools.
+Move every ChatGPT conversation into a Claude Project with two browser-console scripts: no API keys, no extensions, no installs, and nothing leaves your browser except the calls to the two services.
 
-> **Note:** Conversations are exported as a **flat zip** of `.txt` files — ChatGPT project/folder structure is **not preserved**. The importer places every conversation into a **single Claude Project** of your choosing.
+![JavaScript](https://img.shields.io/badge/JavaScript-browser%20console-F7DF1E) ![No dependencies](https://img.shields.io/badge/dependencies-none-2f7a4f) ![chatgpt.com to claude.ai](https://img.shields.io/badge/chatgpt.com-to%20claude.ai-d97757) ![Status working](https://img.shields.io/badge/Status-working-2f7a4f)
+
+![The Claude Conversation Importer overlay on claude.ai, waiting for the Minimize & Capture step](docs/images/importer-overlay.png)
 
 | Step | Script | Where to run | What it does |
-|------|--------|--------------|--------------|
+|---|---|---|---|
 | 1 | `ChatGPTConversationExporter.js` | chatgpt.com | Exports every conversation as a `.txt` inside a `.zip`. |
 | 2 | `ClaudeConversationImporter.js` | claude.ai | Reads the `.zip`, lets you pick a Claude Project, and imports each conversation as a new Claude chat. |
 
-Both scripts work the same way: open **F12 → Console**, paste the script, hit **Enter**. They reuse the Authorization token and Cookie the browser already holds for the active session — nothing to configure.
+Both scripts work the same way: open F12, then Console, paste the script, press Enter. They reuse the session the browser already holds for each site, so there is nothing to configure.
 
----
+Conversations are exported as a flat zip of `.txt` files. ChatGPT project and folder structure is not preserved; the importer places every conversation into a single Claude Project of your choosing.
 
-## Table of Contents
+## Why
 
-- [Requirements](#requirements)
-- [Step 1 — Export from ChatGPT](#step-1--export-from-chatgpt)
-  - [Usage](#usage)
-  - [How It Works](#how-it-works)
-  - [ChatGPT API Endpoints Used](#chatgpt-api-endpoints-used)
-  - [Configuration](#configuration)
-  - [Conversation Format](#conversation-format)
-  - [Duplicate Filename Handling](#duplicate-filename-handling)
-  - [Built-in Zip Writer](#built-in-zip-writer)
-- [Step 2 — Import into Claude](#step-2--import-into-claude)
-  - [Usage](#usage-1)
-  - [How It Works](#how-it-works-1)
-  - [Claude API Endpoints Used](#claude-api-endpoints-used)
-  - [Configuration](#configuration-1)
-  - [Built-in Zip Reader](#built-in-zip-reader)
-- [Privacy & Security](#privacy--security)
-- [UI Overlays](#ui-overlays)
-- [Limitations & Known Constraints](#limitations--known-constraints)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
+- Switch assistants without leaving years of conversations behind.
+- Skip API keys, browser extensions and installers: two pasted scripts do the whole job.
+- Keep your data in your own browser; neither script loads any third-party code.
+- Pick up the conversations ChatGPT hides behind the sidebar's "Show more", because the exporter also walks every ChatGPT Project.
+- Get readable plain-text transcripts as a bonus, labelled by speaker.
 
----
+## Features
 
-## Requirements
+- **Full export** of the conversation list plus every ChatGPT Project's conversations, de-duplicated.
+- **Plain-text transcripts** with a title banner, the date and one block per message, labelled You, ChatGPT, System or Tool.
+- **Built-in zip writer and reader** in pure JavaScript, so no CDN script is needed (chatgpt.com's Content Security Policy blocks them).
+- **Organization and project pickers** on claude.ai; each conversation becomes a new chat in the chosen project.
+- **Progress overlays** with a counter, progress bar, current item, a log of warnings and errors, and a summary at the end.
+- **Polite pacing** with a fixed delay between API calls.
 
-- A modern browser (Chrome, Edge, Firefox, etc.).
-- An active, logged-in session on **chatgpt.com** (Step 1) and **claude.ai** (Step 2).
-- No extensions, API keys, or external tools required.
+![The ChatGPT Conversation Exporter overlay on chatgpt.com as it starts, getting the session token](docs/images/exporter-overlay.png)
 
----
+## Quick start
 
-## Step 1 — Export from ChatGPT
+Requirements:
 
-### Usage
+- A modern browser (Chrome, Edge, Firefox and similar).
+- An active, logged-in session on chatgpt.com (step 1) and claude.ai (step 2).
+- No extensions, API keys or external tools.
 
-1. Go to **[chatgpt.com](https://chatgpt.com)** and make sure you are **logged in**.
-2. Press **F12** (or right-click → *Inspect*) to open **Developer Tools**.
-3. Click the **Console** tab.
-4. Copy the entire contents of **`ChatGPTConversationExporter.js`**.
-5. **Paste** it into the console and press **Enter**.
-6. A full-screen progress overlay will appear — keep the tab open until the export finishes.
-7. When complete, a `chatgpt_export_YYYY-MM-DD.zip` file will download automatically.
+Export from ChatGPT:
 
-### How It Works
+1. Go to [chatgpt.com](https://chatgpt.com) and make sure you are logged in.
+2. Press F12 (or right-click, Inspect) to open Developer Tools, and click the Console tab.
+3. Copy the entire contents of `ChatGPTConversationExporter.js`, paste it into the console and press Enter.
+4. A full-screen progress overlay appears. Keep the tab open until the export finishes.
+5. When it completes, a zip named like `chatgpt_export_2025-07-12-03-42-00.zip` (the current date and time) downloads automatically.
 
-1. **URL Check** — Verifies the script is running on `chatgpt.com`. If the hostname does not match, an alert is shown and the script exits immediately.
-2. **Authentication** — Retrieves your session access token by calling `/api/auth/session`. The token is sent as a `Bearer` token in the `Authorization` header for all subsequent requests.
-3. **Discovery** — Paginates through `/backend-api/conversations` (100 conversations per page, ordered by `updated`) to build a complete list of every conversation in your account.
-4. **Project Scan** — Fetches all ChatGPT Projects via `/backend-api/projects` and, for each project, paginates through `/backend-api/conversations?project_id={id}`. Any conversations not already seen are merged into the main list. This catches conversations hidden behind the sidebar’s “Show more” ellipsis.
-5. **Fetch** — For each conversation, fetches the full message tree from `/backend-api/conversation/{id}`.
-6. **Extract** — Walks the message tree using a depth-first traversal (iterative stack). Each node’s `message.content.parts` array is joined into plain text. Messages are labelled by role (`You`, `ChatGPT`, `System`, `Tool`).
-7. **Package** — Writes each conversation as a `.txt` file inside a zip archive using a built-in pure-JavaScript zip writer (STORE method, no compression). All files are stored flat (no folder nesting).
-8. **Download** — Generates the zip blob in-browser and triggers an automatic download.
+Import into Claude:
 
-### ChatGPT API Endpoints Used
+1. Go to [claude.ai](https://claude.ai) and make sure you are logged in. Create the Claude Project you want to import into if you have not already.
+2. Open Developer Tools, Console, paste the entire contents of `ClaudeConversationImporter.js` and press Enter.
+3. Click **Minimize & Capture**, then send any message in Claude's chat (the overlay suggests "Hello"). This lets the script capture your session's request headers.
+4. The overlay comes back with a file picker. Select the zip from the export.
+5. If you belong to more than one Claude organization (for example a personal plan and a Team workspace), choose one.
+6. Choose the Claude Project to import into.
+7. The script imports every conversation as a new chat in that project. A summary shows how many were imported and how many failed. Click **Close** to dismiss.
+
+## How the exporter works
+
+1. **URL check:** verifies the script is running on `chatgpt.com`; otherwise it shows an alert and exits.
+2. **Authentication:** gets your session access token from `/api/auth/session` and sends it as a Bearer token on every later request.
+3. **Discovery:** pages through `/backend-api/conversations` (100 per page, ordered by `updated`) to list every conversation.
+4. **Project scan:** fetches all ChatGPT Projects from `/backend-api/projects` and pages through each project's conversations. Any not already seen are merged in.
+5. **Fetch:** loads the full message tree for each conversation from `/backend-api/conversation/{id}`.
+6. **Extract:** walks the message tree depth-first (iterative stack), joins each message's content parts into plain text and labels it by role.
+7. **Package:** writes each conversation as a `.txt` file in a flat zip with the built-in writer (STORE method, no compression).
+8. **Download:** builds the zip in the browser and triggers the download.
+
+ChatGPT endpoints used:
 
 | Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/auth/session` | GET | Retrieve the current session access token |
-| `/backend-api/conversations?offset={n}&limit=100&order=updated` | GET | Paginate through the conversation list |
+|---|---|---|
+| `/api/auth/session` | GET | Get the current session access token |
+| `/backend-api/conversations?offset={n}&limit=100&order=updated` | GET | Page through the conversation list |
 | `/backend-api/projects?offset={n}&limit=100&order=most_recent` | GET | Discover all ChatGPT Projects |
-| `/backend-api/conversations?project_id={id}&offset={n}&limit=100` | GET | Paginate conversations inside a specific project |
-| `/backend-api/conversation/{id}` | GET | Fetch the full message tree for a single conversation |
+| `/backend-api/conversations?project_id={id}&offset={n}&limit=100&order=updated` | GET | Page through the conversations inside one project |
+| `/backend-api/conversation/{id}` | GET | Fetch the full message tree of one conversation |
 
-### Configuration
+Exporter settings (constants at the top of the script):
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `DELAY_MS` | `1200` | Milliseconds to wait between API calls (rate-limiting / politeness delay). |
-| `BASE` | `/backend-api` | Base path for ChatGPT backend API calls. |
+|---|---|---|
+| `DELAY_MS` | `250` | Milliseconds to wait between API calls |
+| `BASE` | `/backend-api` | Base path for ChatGPT backend calls |
 
-### Conversation Format
+### Conversation format
 
-Each `.txt` file is formatted as:
+Each `.txt` file looks like this:
 
-```
+```text
 ======================================================================
   Conversation Title
 ======================================================================
@@ -107,162 +109,130 @@ Assistant response text
 ======================================================================
 ```
 
-Roles are mapped as follows:
+| API role | Label |
+|---|---|
+| `user` | You |
+| `assistant` | ChatGPT |
+| `system` | System |
+| `tool` | Tool |
+| anything else | the raw role string |
 
-| API role | Display label |
-|----------|---------------|
-| `user` | `You` |
-| `assistant` | `ChatGPT` |
-| `system` | `System` |
-| `tool` | `Tool` |
-| anything else | raw role string |
+### File names
 
-### Duplicate Filename Handling
+Titles are sanitized: the characters `< > : " / \ ? *` and the pipe character are replaced with an underscore, runs of whitespace collapse to one space, leading and trailing dots are stripped, and names are cut to 100 characters (an empty title becomes `Untitled`). If two conversations share a title, later files get a numeric suffix:
 
-If two conversations have the same title, subsequent files get a numeric suffix:
-
-```
+```text
 Some Title.txt
 Some Title (1).txt
 Some Title (2).txt
 ```
 
-Filenames are sanitized: characters `< > : " / \ | ? *` are replaced with `_`, leading/trailing dots are stripped, and names are truncated to 100 characters.
+### Built-in zip writer
 
-### Built-in Zip Writer
+1. Encodes each file as UTF-8 and computes its CRC-32.
+2. Writes local file headers followed by the raw file data.
+3. Writes a central directory with one entry per file.
+4. Writes the end of central directory (EOCD) record.
+5. Returns the result as a `Blob` for download.
 
-The exporter includes a minimal, dependency-free zip writer implemented in pure JavaScript. It builds a valid ZIP archive using the STORE method (no compression):
+No external libraries are loaded, which avoids chatgpt.com's Content Security Policy blocking third-party CDN scripts.
 
-1. Encodes file content as UTF-8 and computes a **CRC-32** checksum for each entry.
-2. Writes **Local File Headers** followed by raw file data.
-3. Writes a **Central Directory** with one entry per file.
-4. Writes an **End of Central Directory** (EOCD) record.
-5. Returns the result as a `Blob` for immediate download.
+## How the importer works
 
-> **Note:** No external libraries are loaded. This avoids Content Security Policy (CSP) issues on chatgpt.com that block third-party CDN scripts.
+1. **URL check:** verifies the script is running on `claude.ai`; otherwise it shows an alert and exits.
+2. **Header capture:** the overlay minimizes and the script wraps `window.fetch` to capture the request headers, and the active model name, from the next Claude API call you trigger by sending a message. It then makes its own calls with an un-patched native `fetch` taken from a hidden iframe.
+3. **File selection:** a styled file picker that accepts `.zip`.
+4. **Parse:** reads the zip in the browser with the built-in reader and collects every `.txt` file into a flat list, whatever folders the zip has.
+5. **Organization picker:** loads your organizations from `/api/organizations`. Single-organization accounts skip the picker.
+6. **Project picker:** lists your existing Claude Projects; every conversation goes into the one you choose.
+7. **Create conversations:** for each file, creates a chat with the conversation title and the project, then sends the transcript as the first message through the streaming completion endpoint and drains the response so the server commits the conversation.
+8. **Summary:** shows how many conversations were imported and how many failed.
 
----
+Why this works: Claude's web app wraps `window.fetch` and adds its session headers internally. The script captures those headers from one real call, then uses the browser's native `fetch` with the same credentials, which bypasses the wrapper while keeping your login.
 
-## Step 2 — Import into Claude
-
-### Usage
-
-1. Go to **[claude.ai](https://claude.ai)** and make sure you are **logged in**.
-2. Press **F12** (or right-click → *Inspect*) to open **Developer Tools**.
-3. Click the **Console** tab.
-4. Copy the entire contents of **`ClaudeConversationImporter.js`**.
-5. **Paste** it into the console and press **Enter**.
-6. An overlay will appear. Click **Minimize & Capture**, then **send any message** in Claude's chat. This lets the script capture your session's auth headers.
-7. The overlay reappears with a file picker — select your `chatgpt_export_YYYY-MM-DD.zip` file.
-8. If you belong to multiple Claude organizations (e.g., Free + Team), a picker appears — **choose your org**.
-9. A project picker appears — **choose the Claude Project** to import into. (Create one in Claude first if you haven't already.)
-10. The script imports every conversation as a new chat inside the chosen project.
-11. When finished, a summary screen shows conversations imported and errors. Click **Close** to dismiss.
-
-### How It Works
-
-1. **URL Check** — Verifies the script is running on `claude.ai`. If the hostname does not match, an alert is shown and the script exits immediately.
-2. **Auth Capture** — The overlay minimizes and the script intercepts `window.fetch` to capture auth headers and the active model name from the next Claude API call the user triggers (e.g., sending a message). These headers are replayed via un-patched native `fetch` (obtained from a hidden iframe) for all subsequent API calls.
-3. **File Selection** — Presents a styled file picker (`<input type="file" accept=".zip">`).
-4. **Parse** — Reads the zip entirely in-browser using a built-in pure-JavaScript zip reader (no external libraries). All `.txt` files are extracted into a flat list regardless of any folder structure in the zip. See [Built-in Zip Reader](#built-in-zip-reader).
-5. **Organization Picker** — Fetches all Claude organizations from `/api/organizations`. If you belong to multiple orgs (e.g., personal Free plan + a Team workspace), a picker lets you choose which one. Single-org accounts skip this step.
-6. **Project Picker** — Lists your existing Claude Projects and presents a picker. All conversations will be imported into the chosen project.
-7. **Create Conversations** — For each `.txt` file, a new chat conversation is created via `POST /api/organizations/{orgId}/chat_conversations` with the conversation title and `project_uuid`. The conversation content is then sent as the first message via the streaming completion endpoint, and the response is drained so the server commits the conversation.
-8. **Summary** — Displays a completion screen with conversations imported and errors.
-
-> **Why does this work?** Claude's frontend wraps `window.fetch` and adds auth headers (session tokens, client identifiers) internally. Our script captures those headers by intercepting a real API call, then uses un-patched native `fetch` (from a hidden iframe) to make its own requests with the same credentials. This bypasses the wrapper entirely while preserving full authentication.
-
-### Claude API Endpoints Used
+Claude endpoints used:
 
 | Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/organizations` | GET | Retrieve the current user's organization UUID |
-| `/api/organizations/{orgId}/projects` | GET | List existing projects (for project picker) |
-| `/api/organizations/{orgId}/chat_conversations` | POST | Create a new chat conversation (`uuid`, `name`, `project_uuid`) |
-| `/api/organizations/{orgId}/chat_conversations/{convId}/completion` | POST | Send a message to a conversation (streaming response) |
+|---|---|---|
+| `/api/organizations` | GET | List your organizations |
+| `/api/organizations/{orgId}/projects` | GET | List existing projects for the picker |
+| `/api/organizations/{orgId}/chat_conversations` | POST | Create a chat (`uuid`, `name`, `project_uuid`) |
+| `/api/organizations/{orgId}/chat_conversations/{convId}/completion` | POST | Send the transcript as the first message (streaming) |
 
-### Configuration
+Importer settings:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `DELAY_MS` | `800` | Milliseconds to wait between API calls (rate-limiting / politeness delay). |
+|---|---|---|
+| `DELAY_MS` | `250` | Milliseconds to wait between API calls |
 
-### Built-in Zip Reader
+### Built-in zip reader
 
-The importer includes a minimal, dependency-free zip reader implemented in pure JavaScript. It works by:
+1. Scans backwards from the end of the `ArrayBuffer` for the EOCD signature (`0x06054b50`).
+2. Reads the central directory entries for each file's name, compression method, compressed size and local header offset.
+3. Parses each local file header to find where the data starts.
+4. Decompresses: STORE (method 0) entries are used as-is; DEFLATE (method 8) entries go through the browser's built-in `DecompressionStream`.
+5. Decodes the bytes as UTF-8 text.
 
-1. Scanning backwards from the end of the `ArrayBuffer` to locate the **End of Central Directory** (EOCD) signature (`0x06054b50`).
-2. Reading the **Central Directory** entries to discover each file's name, compression method, compressed size, and local header offset.
-3. Parsing each **Local File Header** to calculate the exact data start position.
-4. Decompressing each entry: **STORE** (method 0) entries are used as-is; **DEFLATE** (method 8) entries are decompressed using the browser's built-in `DecompressionStream` API.
-5. Decoding the resulting bytes as UTF-8 text.
+The exporter writes STORE zips, but the importer also handles DEFLATE zips made by other tools. Directories and zero-length entries are skipped.
 
-> **Note:** The exporter generates STORE-method (uncompressed) zips for maximum compatibility. The importer also handles DEFLATE-compressed zips produced by other tools. Directories and zero-length entries are skipped.
+## Privacy and security
 
----
+- **Your data stays in your browser.** Both scripts run inside your active session; conversations are read from one service and written to the other by the same browser that already has access to both.
+- **No third-party servers.** Neither script loads external resources; both use only built-in browser APIs.
+- **No API keys.** Both scripts use the session your browser already holds for chatgpt.com and claude.ai.
+- **Credentials are never stored.** Tokens and headers live in memory for the length of the run and are gone when the page closes.
 
-## Privacy & Security
+## Overlays
 
-- **No data leaves your browser** — both scripts run entirely within your active browser session. Conversations are read from one service and written to another using the same browser that already has access.
-- **No third-party servers** — neither script loads external resources. Both operate entirely using built-in browser APIs.
-- **No API keys** — both scripts piggyback on the authentication tokens/cookies your browser already holds for chatgpt.com and claude.ai.
-- **Credentials are never stored** — access tokens are used in-memory for the duration of the script and discarded when the page is closed.
+Both scripts draw a full-screen dark overlay to show progress.
 
----
+Exporter overlay:
 
-## UI Overlays
+- Header "ChatGPT Conversation Exporter".
+- A progress bar, a counter of conversations, a status line and the title currently being exported.
+- A log panel for warnings (yellow) and errors (red).
+- "Export Complete!" with the totals and a Close button at the end.
 
-Both scripts render a full-screen overlay with a dark theme (`rgba(0,0,0,0.85)` backdrop) to show real-time progress:
+Importer overlay:
 
-### Exporter Overlay (`ChatGPTConversationExporter.js`)
+- Header "Claude Conversation Importer".
+- The Minimize & Capture step, then the zip file picker.
+- Organization and project pickers.
+- The same progress layout as the exporter.
+- "Import Complete!" with a summary and a Close button.
 
-- **Header** — "ChatGPT Conversation Exporter" with a purple-to-green gradient.
-- **Progress bar** — Animated fill from 0% to 100% as conversations are processed.
-- **Counter** — `{current} / {total} conversations`.
-- **Status line** — Current operation description.
-- **Current item** — Monospace display of the conversation title being exported.
-- **Log panel** — Scrollable panel showing warnings (yellow) and errors (red).
-- **Close button** — Appears after export completes.
-
-### Importer Overlay (`ClaudeConversationImporter.js`)
-
-- **Header** — "Claude Conversation Importer" with a warm brown/copper gradient.
-- **File selection view** — A styled button to trigger the file picker.
-- **Organization picker** — Buttons for each Claude org (shown only for multi-org accounts).
-- **Project picker** — Buttons for each existing Claude Project.
-- **Progress view** — Same layout as the exporter (counter, progress bar, status, log).
-- **Completion view** — Checkmark icon, summary statistics, and a **Close** button.
-
----
-
-## Limitations & Known Constraints
+## Limitations
 
 | Area | Detail |
-|------|--------|
-| **Rate limiting** | Both scripts use a fixed delay between API calls (`DELAY_MS`). If you hit rate limits, increase the value. |
-| **Project structure** | ChatGPT project/folder organization is **not preserved**. All conversations are exported as flat `.txt` files and imported into a single Claude Project. |
-| **Conversation size** | Very large conversations may approach Claude's knowledge document size limits. |
-| **Zip compression** | The exporter generates STORE (uncompressed) zips. The importer supports both STORE and DEFLATE. Other compression methods are not supported. |
-| **Browser tab** | The export/import tab must remain open and in the foreground for the full duration of the operation. |
-| **Session expiry** | Long-running exports (thousands of conversations) may encounter session token expiration. Re-run the script if this happens. |
-| **Message types** | Only text content is extracted. Images, file attachments, and DALL-E generations are not included. |
-
----
+|---|---|
+| Rate limiting | Both scripts wait a fixed `DELAY_MS` between calls. If you hit rate limits, raise it. |
+| Project structure | ChatGPT projects and folders are not preserved; everything goes into one Claude Project. |
+| Conversation size | Very large conversations may run into Claude's message size limits. |
+| Zip compression | The importer supports STORE and DEFLATE only. |
+| Browser tab | The tab must stay open, and in the foreground, for the whole run. |
+| Session expiry | Very long exports (thousands of conversations) can outlive the session token. Re-run the script if that happens. |
+| Message types | Only text is exported. Images, file attachments and DALL-E generations are not included. |
+| Private APIs | Both scripts use the sites' own web endpoints, which can change without notice. |
 
 ## Troubleshooting
 
 | Problem | Solution |
-|---------|----------|
-| **"…must be run on chatgpt.com / claude.ai"** | You pasted the script on the wrong website. Navigate to the correct domain first. The exporter only runs on `chatgpt.com`; the importer only runs on `claude.ai`. |
-| **"No accessToken in session response"** | Your ChatGPT session may have expired. Refresh the page, ensure you are logged in, and try again. |
-| **"Not a valid zip file (no EOCD found)"** | The selected file is not a valid zip archive. Make sure you are selecting the `.zip` output from Step 1. |
-| **"Failed to fetch orgs"** | Your Claude session may have expired. Refresh claude.ai, log in, and re-run the importer. |
-| **HTTP 429 errors** | You are being rate-limited. Increase `DELAY_MS` (e.g., to `2000` or higher) and try again. |
-| **Script does nothing** | Check the browser console for errors. Some browsers require you to type `allow pasting` first before pasting scripts into the console. |
-| **Missing conversations** | The exporter skips conversations with zero extractable text messages. Check the log panel for "No messages" warnings. |
+|---|---|
+| "must be run on chatgpt.com" or "claude.ai" | You pasted the script on the wrong site. The exporter only runs on chatgpt.com; the importer only runs on claude.ai. |
+| "No accessToken in session response" | Your ChatGPT session has probably expired. Refresh the page, make sure you are logged in, and try again. |
+| "Not a valid zip file (no EOCD found)" | The selected file is not a zip. Select the zip from step 1. |
+| "Failed to fetch orgs" | Your Claude session has probably expired. Refresh claude.ai, log in, and re-run the importer. |
+| HTTP 429 errors | You are being rate-limited. Raise `DELAY_MS` (for example to `2000`) and try again. |
+| The script does nothing | Check the console for errors. Some browsers make you type `allow pasting` before they accept a pasted script. |
+| Missing conversations | The exporter skips conversations with no extractable text. Look for "No messages" warnings in the log panel. |
 
----
+## Documentation
+
+- [Copilot instructions](.github/copilot-instructions.md): notes for AI coding agents working in this repo.
+- `README.htm` is an older generated copy of this page and is not kept in sync; this README is the current one.
 
 ## License
 
-This project is provided as-is for personal use. Use at your own risk.
+This repository has no LICENSE file; all rights are reserved. The scripts are provided as-is for personal use; use them at your own risk.
+
+Part of [MindAttic](https://mindattic.com) — see more projects at [github.com/mindattic](https://github.com/mindattic). Related: [Audible-To-GoodReads](https://github.com/mindattic/Audible-To-GoodReads), another tool for moving your data between services.
